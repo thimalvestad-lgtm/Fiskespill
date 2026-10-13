@@ -1,0 +1,24 @@
+{
+  "leaders": [
+    { "id": "7.5", "label": "7.5 ft", "note": "Short and easy to control. Lands close and splashy." },
+    { "id": "9", "label": "9 ft", "note": "The all-rounder." },
+    { "id": "12", "label": "12 ft", "note": "Keeps the fly line away from wary fish." },
+    { "id": "15", "label": "15 ft", "note": "Long and delicate. Hard to manage in broken water." }
+  ],
+  "tippets": [
+    { "id": "3X", "label": "3X · 0.20 mm", "strengthKg": 3.6, "note": "Strong. Easy to see in clear water." },
+    { "id": "4X", "label": "4X · 0.18 mm", "strengthKg": 2.7, "note": "Sturdy. Good with heavier flies." },
+    { "id": "5X", "label": "5X · 0.15 mm", "strengthKg": 2.0, "note": "A fine all-round tippet." },
+    { "id": "6X", "label": "6X · 0.13 mm", "strengthKg": 1.4, "note": "Nearly invisible. Easy to break." }
+  ],
+  "flyTypes": [
+    { "id": "dry", "label": "Dry fly", "note": "Floats on the surface, for fish that are looking up." },
+    { "id": "nymph", "label": "Nymph", "note": "Sinks to the bottom, where trout do most of their feeding." },
+    { "id": "drydropper", "label": "Dry dropper", "note": "A dry with a small nymph hung under it. Fishes two depths at once." }
+  ],
+  "flySizes": [
+    { "id": "small", "label": "Small #18", "rank": 0 },
+    { "id": "medium", "label": "Medium #14", "rank": 1 },
+    { "id": "large", "label": "Large #10", "rank": 2 }
+  ]
+}

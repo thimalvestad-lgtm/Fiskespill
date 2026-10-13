@@ -1,0 +1,65 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { evaluateRig, takeChance, drawFish } from '../public/js/sim.js';
+
+const load = (f) => JSON.parse(readFileSync(new URL(`../public/data/${f}`, import.meta.url)));
+const water = load('water.json');
+const river = load('river.json');
+const conditions = load('conditions.json');
+const spot = (id) => river.spots.find((s) => s.id === id);
+const weather = (id) => conditions.weather.find((w) => w.id === id);
+const clarity = (id) => conditions.clarity.find((c) => c.id === id);
+const hatch = (id) => conditions.hatches.find((h) => h.id === id);
+
+const day = (w, c, hatches = []) => ({ weather: weather(w), clarity: clarity(c), hatches: hatches.map(hatch) });
+const rig = (leader, tippet, fly, size) => ({ leader, tippet, fly, size });
+
+test('flat: long leader and fine tippet beat short and thick', () => {
+  const ctx = { water, day: day('sunny', 'clear', ['caddis']), minute: 1150 };
+  const good = evaluateRig(spot('glide'), rig('12', '6X', 'dry', 'medium'), ctx);
+  const bad = evaluateRig(spot('glide'), rig('7.5', '3X', 'dry', 'medium'), ctx);
+  assert.ok(good.match > 0.85, `good ${good.match}`);
+  assert.ok(bad.match < 0.15, `bad ${bad.match}`);
+});
+
+test('flat during a hatch: the dry fly of the right size wins', () => {
+  const ctx = { water, day: day('overcast', 'clear', ['olives']), minute: 720 };
+  const dry = evaluateRig(spot('glide'), rig('12', '6X', 'dry', 'small'), ctx);
+  const wrongSize = evaluateRig(spot('glide'), rig('12', '6X', 'dry', 'large'), ctx);
+  const nymph = evaluateRig(spot('glide'), rig('12', '6X', 'nymph', 'small'), ctx);
+  assert.ok(dry.match > wrongSize.match && dry.match > nymph.match);
+});
+
+test('pocket water: short leader, strong tippet and a nymph', () => {
+  const ctx = { water, day: day('sunny', 'clear'), minute: 720 };
+  const good = evaluateRig(spot('big-boulder'), rig('7.5', '3X', 'nymph', 'large'), ctx);
+  const bad = evaluateRig(spot('big-boulder'), rig('15', '6X', 'dry', 'small'), ctx);
+  assert.ok(good.match > 0.9);
+  assert.ok(bad.match < 0.25);
+});
+
+test('coloured water forgives a thick tippet', () => {
+  const s = spot('glide');
+  const r = rig('12', '4X', 'dry', 'medium');
+  const clear = evaluateRig(s, r, { water, day: day('overcast', 'clear', ['caddis']), minute: 1150 });
+  const tinged = evaluateRig(s, r, { water, day: day('overcast', 'tinged', ['caddis']), minute: 1150 });
+  assert.ok(tinged.factors.tippet > clear.factors.tippet);
+});
+
+test('the right rig catches more often and bigger', () => {
+  const ctx = { water, day: day('overcast', 'clear'), minute: 600 };
+  const s = spot('pool-head');
+  const good = takeChance(s, rig('9', '4X', 'nymph', 'large'), ctx);
+  const bad = takeChance(s, rig('15', '6X', 'dry', 'small'), ctx);
+  assert.ok(good.p > bad.p * 2.5, `${good.p} vs ${bad.p}`);
+
+  let seed = 1;
+  const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const avg = (m) => {
+    let t = 0;
+    for (let i = 0; i < 2000; i++) t += drawFish(s, m, 'morning', rng).length;
+    return t / 2000;
+  };
+  assert.ok(avg(good.ev.match) > avg(bad.ev.match) + 5);
+});

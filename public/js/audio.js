@@ -1,0 +1,260 @@
+// Procedural nature sounds with the Web Audio API: no sound files needed.
+
+export class Ambience {
+  constructor() {
+    this.ctx = null;
+    this.enabled = true;
+    this.volume = 0.8;
+    this.birdTimer = null;
+    this.state = { riverLevel: 0.6, riverBright: 0.6, rain: false, part: 'morning', wind: 0.5 };
+  }
+
+  start() {
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = (this.ctx = new AC());
+    this.master = ctx.createGain();
+    this.master.gain.value = this.enabled ? this.volume : 0;
+    // A gentle compressor keeps splashes from jumping out.
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -18;
+    comp.ratio.value = 3;
+    this.master.connect(comp).connect(ctx.destination);
+
+    this.noise = this.makeNoise(4, 'brown');
+    this.white = this.makeNoise(2, 'white');
+
+    // River: deep rumble and a brighter babbling layer.
+    this.riverLow = this.loop(this.noise, { type: 'lowpass', freq: 500, q: 0.4 }, 0.5);
+    this.riverHigh = this.loop(this.white, { type: 'bandpass', freq: 1800, q: 0.6 }, 0.05);
+    this.babble();
+
+    // Wind through leaves.
+    this.wind = this.loop(this.white, { type: 'bandpass', freq: 600, q: 0.5 }, 0.0);
+    this.gusts();
+
+    // Rain (only on drizzly days).
+    this.rain = this.loop(this.white, { type: 'highpass', freq: 3500, q: 0.3 }, 0.0);
+
+    this.apply();
+    this.scheduleBird();
+  }
+
+  makeNoise(seconds, color) {
+    const ctx = this.ctx;
+    const len = ctx.sampleRate * seconds;
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      let last = 0;
+      for (let i = 0; i < len; i++) {
+        const w = Math.random() * 2 - 1;
+        if (color === 'brown') {
+          last = (last + 0.02 * w) / 1.02;
+          d[i] = last * 3.5;
+        } else d[i] = w;
+      }
+    }
+    return buf;
+  }
+
+  loop(buffer, filter, gain) {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    src.loopStart = Math.random();
+    const f = ctx.createBiquadFilter();
+    f.type = filter.type;
+    f.frequency.value = filter.freq;
+    f.Q.value = filter.q;
+    const g = ctx.createGain();
+    g.gain.value = gain;
+    src.connect(f).connect(g).connect(this.master);
+    src.start(0, Math.random() * buffer.duration);
+    return { src, filter: f, gain: g };
+  }
+
+  babble() {
+    // Slowly wander the bright layer so the river never sounds like a static hiss.
+    const tick = () => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const s = this.state;
+      const f = 1200 + Math.random() * 1400 * s.riverBright;
+      this.riverHigh.filter.frequency.setTargetAtTime(f, t, 0.6);
+      this.riverHigh.gain.gain.setTargetAtTime(s.riverLevel * s.riverBright * (0.05 + Math.random() * 0.07), t, 0.5);
+      setTimeout(tick, 600 + Math.random() * 900);
+    };
+    tick();
+  }
+
+  gusts() {
+    const tick = () => {
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      const g = this.state.wind * (0.015 + Math.random() * 0.05);
+      this.wind.gain.gain.setTargetAtTime(g, t, 1.8);
+      this.wind.filter.frequency.setTargetAtTime(400 + Math.random() * 500, t, 2);
+      setTimeout(tick, 2500 + Math.random() * 4000);
+    };
+    tick();
+  }
+
+  set(partial) {
+    Object.assign(this.state, partial);
+    this.apply();
+  }
+
+  apply() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const s = this.state;
+    this.riverLow.gain.gain.setTargetAtTime(0.25 + s.riverLevel * 0.45, t, 1.5);
+    this.riverLow.filter.frequency.setTargetAtTime(300 + s.riverBright * 600, t, 1.5);
+    this.rain.gain.gain.setTargetAtTime(s.rain ? 0.035 : 0, t, 2);
+  }
+
+  setEnabled(on) {
+    this.enabled = on;
+    if (this.ctx) this.master.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.3);
+  }
+
+  // --- Birds -------------------------------------------------------------
+
+  scheduleBird() {
+    const part = this.state.part;
+    const busy = { dawn: 1.6, morning: 1.3, midday: 0.6, afternoon: 0.7, evening: 1.1, dusk: 0.5 }[part] ?? 1;
+    const wait = (3000 + Math.random() * 9000) / busy;
+    this.birdTimer = setTimeout(() => {
+      if (this.enabled && this.ctx && this.ctx.state === 'running') this.bird();
+      this.scheduleBird();
+    }, wait);
+  }
+
+  tone(t, f0, f1, dur, gain, pan = 0, type = 'sine') {
+    const ctx = this.ctx;
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f0, t);
+    o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + Math.min(0.02, dur / 3));
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (p) {
+      p.pan.value = pan;
+      o.connect(g).connect(p).connect(this.master);
+    } else o.connect(g).connect(this.master);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  }
+
+  bird() {
+    const t = this.ctx.currentTime + 0.05;
+    const pan = Math.random() * 1.6 - 0.8;
+    const v = 0.025 + Math.random() * 0.03;
+    const part = this.state.part;
+    const r = Math.random();
+    if ((part === 'evening' || part === 'dusk') && r < 0.55) {
+      // Blackbird-like: slow, fluting phrase.
+      let tt = t;
+      const notes = 3 + Math.floor(Math.random() * 4);
+      let f = 1300 + Math.random() * 600;
+      for (let i = 0; i < notes; i++) {
+        const nf = f * (0.85 + Math.random() * 0.4);
+        const d = 0.12 + Math.random() * 0.22;
+        this.tone(tt, f, nf, d, v * 1.1, pan);
+        tt += d + 0.03;
+        f = nf;
+      }
+    } else if (r < 0.35) {
+      // Chaffinch-like: an accelerating run of chips.
+      let tt = t;
+      const n = 6 + Math.floor(Math.random() * 6);
+      for (let i = 0; i < n; i++) {
+        const f = 3600 - i * 120 + Math.random() * 200;
+        this.tone(tt, f, f * 0.8, 0.05, v, pan);
+        tt += 0.11 - i * 0.006;
+      }
+      this.tone(tt + 0.04, 2600, 4200, 0.18, v * 1.2, pan);
+    } else if (r < 0.65) {
+      // A soft two-note whistle.
+      const f = 2400 + Math.random() * 1200;
+      this.tone(t, f, f * 1.05, 0.22, v, pan);
+      this.tone(t + 0.3, f * 0.82, f * 0.8, 0.28, v, pan);
+    } else if (r < 0.85) {
+      // A wren-style trill.
+      let tt = t;
+      const base = 4200 + Math.random() * 1500;
+      for (let i = 0; i < 14; i++) {
+        this.tone(tt, base, base * 0.7, 0.035, v * 0.8, pan, 'triangle');
+        tt += 0.045;
+      }
+    } else {
+      // A dipper's sharp "zit" calls over the water.
+      for (let i = 0; i < 3; i++) this.tone(t + i * 0.18, 5200, 4400, 0.04, v * 0.9, pan);
+    }
+  }
+
+  // --- Effects -----------------------------------------------------------
+
+  burst(dur, filter, gain, freq) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.white;
+    const f = ctx.createBiquadFilter();
+    f.type = filter;
+    f.frequency.setValueAtTime(freq[0], t);
+    f.frequency.exponentialRampToValueAtTime(freq[1], t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(t, Math.random());
+    src.stop(t + dur + 0.05);
+  }
+
+  cast() {
+    this.burst(0.45, 'bandpass', 0.12, [500, 2200]);
+  }
+
+  plop() {
+    this.burst(0.12, 'lowpass', 0.06, [1400, 300]);
+  }
+
+  splash(big = 1) {
+    this.burst(0.5 + 0.3 * big, 'lowpass', 0.18 * big + 0.05, [3000, 400]);
+  }
+
+  click() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.tone(t, 1800, 1500, 0.025, 0.03, 0, 'square');
+  }
+
+  scream() {
+    // A fish taking line off the reel.
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 10; i++) this.tone(t + i * 0.03, 2300, 2200, 0.02, 0.02, 0, 'square');
+  }
+
+  chime() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    [523, 659, 784, 1046].forEach((f, i) => this.tone(t + i * 0.12, f, f, 0.9, 0.05, 0, 'sine'));
+  }
+
+  snap() {
+    this.burst(0.08, 'highpass', 0.15, [3000, 2000]);
+  }
+}

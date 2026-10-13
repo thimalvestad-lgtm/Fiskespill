@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Riverbend: a quiet fly fishing game</title>
+  <meta name="description" content="A slow, calm fly fishing game. Read the river, choose your rig and catch trout.">
+  <meta name="theme-color" content="#24342b">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Riverbend</div>
+    <div class="chips">
+      <span class="chip" id="clock" title="Time of day">06:00</span>
+      <span class="chip" id="weather" title="Weather"></span>
+      <span class="chip" id="clarity" title="Water clarity"></span>
+      <span class="chip score" id="points" title="Points">0 pts</span>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-guide" title="Field guide" aria-label="Field guide">?</button>
+      <button class="icon-btn" id="btn-log" title="Logbook" aria-label="Logbook">&#128214;</button>
+      <button class="icon-btn" id="btn-sound" title="Sound on/off" aria-label="Sound on/off">&#128264;</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="stage" id="stage">
+      <canvas id="river" aria-label="Top-down view of the river"></canvas>
+      <div class="toast" id="toast" aria-live="polite"></div>
+      <button class="strike" id="strike" hidden>Strike!</button>
+      <div class="fight" id="fight" hidden>
+        <div class="fight-title" id="fight-title">Fish on!</div>
+        <div class="meter"><span>Line tension</span><div class="bar"><div class="fill tension" id="tension"></div><div class="limit"></div></div></div>
+        <div class="meter"><span>Line in</span><div class="bar"><div class="fill progress" id="progress"></div></div></div>
+        <div class="fight-hint">Hold the mouse, your finger or <kbd>Space</kbd> to reel in. Ease off when the fish runs.</div>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <section class="card">
+        <h2>River notes</h2>
+        <p id="notes" class="notes"></p>
+      </section>
+
+      <section class="card">
+        <h2 id="spot-title">Choose a spot</h2>
+        <div id="spot-info" class="spot-info">
+          <p class="muted">Tap one of the faint rings on the river to walk to that spot and read the water.</p>
+        </div>
+      </section>
+
+      <section class="card rig">
+        <h2>Your rig</h2>
+        <div class="rig-row"><label>Leader</label><div class="seg" id="seg-leader"></div></div>
+        <div class="rig-row"><label>Tippet</label><div class="seg" id="seg-tippet"></div></div>
+        <div class="rig-row"><label>Fly</label><div class="seg" id="seg-fly"></div></div>
+        <div class="rig-row"><label>Size</label><div class="seg" id="seg-size"></div></div>
+        <p class="rig-note" id="rig-note"></p>
+      </section>
+
+      <div class="actions">
+        <button class="primary" id="btn-cast" disabled>Cast</button>
+        <button class="secondary" id="btn-rest" title="Let 20 minutes pass while you watch the water">Sit &amp; watch</button>
+      </div>
+
+      <section class="card log-card">
+        <ol id="log" class="log"></ol>
+      </section>
+    </aside>
+  </main>
+
+  <!-- Intro / new day -->
+  <div class="modal" id="intro" hidden>
+    <div class="sheet">
+      <p class="eyebrow" id="intro-day">Day 1</p>
+      <h1>Riverbend</h1>
+      <p class="lede">A quiet stretch of trout stream: a fast riffle, a garden of boulders and a long, glassy flat. Read the water, choose your rig, and see what rises.</p>
+      <div class="day-conditions" id="intro-conditions"></div>
+      <details class="howto">
+        <summary>How to play</summary>
+        <ul>
+          <li>Tap a ring on the river to walk to a spot. Each one is a different kind of water.</li>
+          <li>Build your rig: leader length, tippet thickness, fly type and size.</li>
+          <li><b>Cast</b>, then watch the fly drift. When a fish takes, tap <b>Strike!</b></li>
+          <li>Hold to reel in. Ease off when the fish runs, or the tippet will break. In rocky water, though, a fish given too much line will wrap you round a rock.</li>
+          <li>The better your rig suits the water and the conditions, the more often fish take, and the bigger they are.</li>
+        </ul>
+      </details>
+      <button class="primary wide" id="btn-start">Walk down to the river</button>
+      <p class="tiny">Best with sound on. Headphones make the river sound lovely.</p>
+    </div>
+  </div>
+
+  <!-- Catch card -->
+  <div class="modal" id="catch" hidden>
+    <div class="sheet catch-sheet">
+      <p class="eyebrow" id="catch-eyebrow">Brown trout</p>
+      <canvas id="fish-canvas" width="560" height="220"></canvas>
+      <div class="catch-stats">
+        <div><b id="catch-len">0</b><span>cm</span></div>
+        <div><b id="catch-wt">0</b><span>grams</span></div>
+        <div><b id="catch-pts">0</b><span>points</span></div>
+      </div>
+      <p class="stars" id="catch-stars"></p>
+      <p class="catch-note" id="catch-note"></p>
+      <p class="achieve" id="catch-ach" hidden></p>
+      <button class="primary wide" id="btn-release">Slip it back into the current</button>
+    </div>
+  </div>
+
+  <!-- End of day -->
+  <div class="modal" id="dayend" hidden>
+    <div class="sheet">
+      <p class="eyebrow">Dusk</p>
+      <h1>The light is gone</h1>
+      <p class="lede" id="dayend-text"></p>
+      <ul class="day-list" id="dayend-list"></ul>
+      <button class="primary wide" id="btn-newday">Sleep, and come back tomorrow</button>
+    </div>
+  </div>
+
+  <!-- Logbook -->
+  <div class="modal" id="logbook" hidden>
+    <div class="sheet wide-sheet">
+      <button class="close" data-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Logbook</p>
+      <h1 id="rank">Novice</h1>
+      <div class="book-stats" id="book-stats"></div>
+      <h3>Achievements</h3>
+      <div class="ach-grid" id="ach-grid"></div>
+      <h3>Recent fish</h3>
+      <div class="table-wrap"><table class="catches" id="catch-table"></table></div>
+    </div>
+  </div>
+
+  <!-- Field guide -->
+  <div class="modal" id="guide" hidden>
+    <div class="sheet wide-sheet">
+      <button class="close" data-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Field guide</p>
+      <h1>Reading the river</h1>
+      <div class="guide-grid">
+        <div>
+          <h3>Where trout live</h3>
+          <p>A trout wants three things: shelter from the current, safety from predators, and food delivered to its door. So look for <b>seams</b> where fast water meets slow, <b>pockets</b> behind boulders, <b>drop-offs</b> below riffles, the deep <b>head of a pool</b>, and dark <b>undercut banks</b>. The best lies hold the biggest fish.</p>
+          <p>Flat water and tailouts hold fish mostly when insects are hatching, or in low light at dawn and dusk.</p>
+        </div>
+        <div>
+          <h3>Leader &amp; tippet</h3>
+          <p>In <b>clear, slow water</b>, fish see everything: use a long leader (12 ft or more) and fine tippet (5X–6X). In <b>fast, broken water</b>, a shorter leader gives you control, and a stronger tippet (3X–4X) can stop a fish before it reaches the rocks. Coloured water forgives a thicker tippet. Bright sun makes fish warier; overcast and rain make them bolder.</p>
+        </div>
+        <div>
+          <h3>Choosing a fly</h3>
+          <p><b>Rising fish?</b> Use a dry fly about the size of the insects you see. <b>Nothing on the surface?</b> Most feeding happens near the bottom, so use a nymph. Go heavier in deep or fast water and smaller on the flat. The <b>dry dropper</b> covers both depths and suits riffles, seams and banks, especially when you're not sure.</p>
+        </div>
+        <div>
+          <h3>A day on the river</h3>
+          <p>Dawn and dusk are prime time, and the big browns come out of hiding. Midday sun pushes fish into deep or broken water. Watch the river notes: they tell you what's hatching, and when.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

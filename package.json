@@ -1,0 +1,14 @@
+{
+  "name": "fishing-game",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test/*.test.js",
+    "deploy:embedded": "node scripts/build-embedded.mjs && wrangler deploy --config wrangler.embedded.jsonc"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

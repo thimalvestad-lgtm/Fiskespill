@@ -1,0 +1,67 @@
+{
+  "_about": "How well each rig choice suits each kind of water, from 0 (hopeless) to 1 (ideal). 'spookiness' is how much a visible leader or tippet matters there, and 'snag' is the risk of a hooked fish reaching rocks or roots. 'activity' is how willing fish in this water are to feed at each time of day.",
+  "types": {
+    "riffle": {
+      "label": "Riffle",
+      "spookiness": 0.3,
+      "leader": { "7.5": 0.85, "9": 1.0, "12": 0.75, "15": 0.55 },
+      "tippet": { "3X": 0.8, "4X": 1.0, "5X": 1.0, "6X": 0.85 },
+      "fly": { "dry": 0.6, "nymph": 0.95, "drydropper": 1.0 },
+      "nymphSize": { "small": 0.75, "medium": 1.0, "large": 0.85 },
+      "activity": { "dawn": 0.8, "morning": 0.9, "midday": 0.85, "afternoon": 0.85, "evening": 0.95, "dusk": 0.7 }
+    },
+    "pocket": {
+      "label": "Pocket water",
+      "spookiness": 0.25,
+      "leader": { "7.5": 1.0, "9": 0.95, "12": 0.65, "15": 0.45 },
+      "tippet": { "3X": 1.0, "4X": 1.0, "5X": 0.85, "6X": 0.6 },
+      "fly": { "dry": 0.7, "nymph": 1.0, "drydropper": 0.95 },
+      "nymphSize": { "small": 0.65, "medium": 0.95, "large": 1.0 },
+      "activity": { "dawn": 0.85, "morning": 0.9, "midday": 0.8, "afternoon": 0.85, "evening": 0.95, "dusk": 0.75 }
+    },
+    "run": {
+      "label": "Deep run",
+      "spookiness": 0.4,
+      "leader": { "7.5": 0.8, "9": 1.0, "12": 0.85, "15": 0.65 },
+      "tippet": { "3X": 0.85, "4X": 1.0, "5X": 0.95, "6X": 0.75 },
+      "fly": { "dry": 0.45, "nymph": 1.0, "drydropper": 0.8 },
+      "nymphSize": { "small": 0.7, "medium": 0.95, "large": 1.0 },
+      "activity": { "dawn": 0.95, "morning": 0.9, "midday": 0.8, "afternoon": 0.8, "evening": 0.95, "dusk": 0.85 }
+    },
+    "seam": {
+      "label": "Current seam",
+      "spookiness": 0.5,
+      "leader": { "7.5": 0.75, "9": 1.0, "12": 0.95, "15": 0.75 },
+      "tippet": { "3X": 0.7, "4X": 0.95, "5X": 1.0, "6X": 0.9 },
+      "fly": { "dry": 0.8, "nymph": 0.9, "drydropper": 1.0 },
+      "nymphSize": { "small": 0.85, "medium": 1.0, "large": 0.8 },
+      "activity": { "dawn": 0.85, "morning": 0.9, "midday": 0.75, "afternoon": 0.8, "evening": 1.0, "dusk": 0.85 }
+    },
+    "bank": {
+      "label": "Undercut bank",
+      "spookiness": 0.55,
+      "leader": { "7.5": 0.85, "9": 1.0, "12": 0.85, "15": 0.6 },
+      "tippet": { "3X": 0.95, "4X": 1.0, "5X": 0.85, "6X": 0.6 },
+      "fly": { "dry": 0.7, "nymph": 0.9, "drydropper": 1.0 },
+      "nymphSize": { "small": 0.75, "medium": 1.0, "large": 0.9 },
+      "activity": { "dawn": 0.9, "morning": 0.75, "midday": 0.65, "afternoon": 0.75, "evening": 0.95, "dusk": 1.0 }
+    },
+    "flat": {
+      "label": "Flat glide",
+      "spookiness": 1.0,
+      "leader": { "7.5": 0.35, "9": 0.65, "12": 1.0, "15": 0.95 },
+      "tippet": { "3X": 0.3, "4X": 0.55, "5X": 0.9, "6X": 1.0 },
+      "fly": { "dry": 0.85, "nymph": 0.6, "drydropper": 0.75 },
+      "nymphSize": { "small": 1.0, "medium": 0.8, "large": 0.45 },
+      "activity": { "dawn": 0.85, "morning": 0.7, "midday": 0.4, "afternoon": 0.55, "evening": 1.0, "dusk": 0.9 }
+    }
+  },
+  "dayParts": [
+    { "id": "dawn", "from": 360, "label": "Dawn" },
+    { "id": "morning", "from": 450, "label": "Morning" },
+    { "id": "midday", "from": 660, "label": "Midday" },
+    { "id": "afternoon", "from": 870, "label": "Afternoon" },
+    { "id": "evening", "from": 1080, "label": "Evening" },
+    { "id": "dusk", "from": 1230, "label": "Dusk" }
+  ]
+}

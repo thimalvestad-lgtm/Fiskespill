@@ -1,0 +1,113 @@
+{
+  "_about": "The stretch of river, in a 600 x 900 map space. Water flows from the top (y = 0) to the bottom. 'channel' lists points along the centre of the river with the river's width at each point. Fish sizes are in centimetres.",
+  "name": "The Lower Beat",
+  "size": { "w": 600, "h": 900 },
+  "channel": [
+    { "y": -40, "x": 325, "w": 210 },
+    { "y": 0, "x": 320, "w": 215 },
+    { "y": 120, "x": 300, "w": 235 },
+    { "y": 240, "x": 315, "w": 225 },
+    { "y": 320, "x": 300, "w": 190 },
+    { "y": 420, "x": 315, "w": 200 },
+    { "y": 520, "x": 295, "w": 190 },
+    { "y": 600, "x": 300, "w": 250 },
+    { "y": 720, "x": 300, "w": 330 },
+    { "y": 830, "x": 310, "w": 310 },
+    { "y": 900, "x": 300, "w": 255 },
+    { "y": 940, "x": 298, "w": 240 }
+  ],
+  "sections": [
+    { "id": "riffle", "label": "The Riffle", "from": 0, "to": 300, "speed": 1.0, "depth": 0.25, "noise": 1.0,
+      "about": "Fast, shallow water over cobbles. Choppy and broken, and full of oxygen and insect life." },
+    { "id": "boulders", "label": "The Boulder Garden", "from": 300, "to": 565, "speed": 0.8, "depth": 0.55, "noise": 0.8,
+      "about": "Big rocks split the current into pockets, seams and soft water. There is plenty of cover, and plenty to snag a fish on." },
+    { "id": "flat", "label": "The Flat", "from": 565, "to": 900, "speed": 0.28, "depth": 0.9, "noise": 0.25,
+      "about": "A long, glassy pool. The current slows and the water is clear, so every fish sees every mistake." }
+  ],
+  "rocks": [
+    { "x": 368, "y": 58, "r": 7 }, { "x": 262, "y": 92, "r": 6 }, { "x": 346, "y": 178, "r": 6 },
+    { "x": 252, "y": 250, "r": 7 }, { "x": 382, "y": 236, "r": 5 }, { "x": 300, "y": 30, "r": 5 },
+    { "x": 290, "y": 360, "r": 27 }, { "x": 225, "y": 458, "r": 15 }, { "x": 350, "y": 478, "r": 19 },
+    { "x": 268, "y": 528, "r": 12 }, { "x": 372, "y": 372, "r": 9 },
+    { "x": 248, "y": 884, "r": 5 }, { "x": 372, "y": 890, "r": 4 }
+  ],
+  "spots": [
+    {
+      "id": "riffle-bucket", "name": "Bucket in the riffle", "type": "riffle", "section": "riffle",
+      "x": 330, "y": 112, "depth": "0.6 m", "current": "Fast",
+      "description": "A dark depression in the cobbles, knee-deep where the rest of the riffle is ankle-deep. Trout sit in the slower water at the bottom of the hole and watch food tumble past.",
+      "holding": 0.75, "snag": 0.2,
+      "fish": { "min": 22, "max": 38, "trophy": 46, "trophyChance": 0.03, "rainbow": 0.35 }
+    },
+    {
+      "id": "riffle-seam", "name": "Riffle edge", "type": "seam", "section": "riffle",
+      "x": 232, "y": 192, "depth": "0.4 m", "current": "Fast meets slow",
+      "description": "The fast riffle runs against softer water along the inside edge. Fish hold in the slow side, right on the line, and dart out for anything drifting in the fast lane.",
+      "holding": 0.7, "snag": 0.15,
+      "fish": { "min": 22, "max": 36, "trophy": 44, "trophyChance": 0.03, "rainbow": 0.3 }
+    },
+    {
+      "id": "dropoff", "name": "Drop-off below the riffle", "type": "run", "section": "riffle",
+      "x": 318, "y": 286, "depth": "1.3 m", "current": "Medium, deep",
+      "description": "The riffle tumbles over a ledge into a deep green slot. Insects knocked loose in the riffle wash straight down to fish waiting in the darker water.",
+      "holding": 0.85, "snag": 0.35,
+      "fish": { "min": 28, "max": 48, "trophy": 56, "trophyChance": 0.06, "rainbow": 0.25 }
+    },
+    {
+      "id": "big-boulder", "name": "Pocket behind the big boulder", "type": "pocket", "section": "boulders",
+      "x": 290, "y": 404, "depth": "1.1 m", "current": "Slack behind a fast stream",
+      "description": "The river splits around a car-sized boulder and leaves a pocket of calm water behind it. This is the best seat on the river: shelter from the current, with food delivered on both sides.",
+      "holding": 0.9, "snag": 0.8,
+      "fish": { "min": 28, "max": 48, "trophy": 60, "trophyChance": 0.08, "rainbow": 0.2 }
+    },
+    {
+      "id": "side-seam", "name": "Seam beside the boulder", "type": "seam", "section": "boulders",
+      "x": 240, "y": 400, "depth": "0.8 m", "current": "Medium with a foam line",
+      "description": "Faster water from around the boulder meets the slack. A thin line of foam marks where drifting food collects.",
+      "holding": 0.75, "snag": 0.5,
+      "fish": { "min": 25, "max": 42, "trophy": 50, "trophyChance": 0.04, "rainbow": 0.25 }
+    },
+    {
+      "id": "plunge-pocket", "name": "Plunge pocket", "type": "pocket", "section": "boulders",
+      "x": 352, "y": 510, "depth": "0.9 m", "current": "Turbulent",
+      "description": "Water pours over a rock into a frothy, bubbly pocket. The broken surface hides the fish, and hides you too.",
+      "holding": 0.75, "snag": 0.7,
+      "fish": { "min": 24, "max": 42, "trophy": 52, "trophyChance": 0.04, "rainbow": 0.3 }
+    },
+    {
+      "id": "undercut-bank", "name": "Undercut bank on the bend", "type": "bank", "section": "boulders",
+      "x": 400, "y": 440, "depth": "1.0 m", "current": "Medium, along the bank",
+      "description": "The current has carved a dark hollow under the grassy outside bend, with roots hanging into the water. Old brown trout live here, and insects drop in from the grass above.",
+      "holding": 0.85, "snag": 0.65,
+      "fish": { "min": 30, "max": 52, "trophy": 66, "trophyChance": 0.1, "rainbow": 0.05 }
+    },
+    {
+      "id": "pool-head", "name": "Head of the pool", "type": "run", "section": "flat",
+      "x": 300, "y": 620, "depth": "1.8 m", "current": "Strong tongue into deep water",
+      "description": "A tongue of current drives into the deepest water on the beat. The broken surface gives cover, the depth gives safety, and everything from upstream drifts through. The dominant fish claim this spot.",
+      "holding": 0.9, "snag": 0.3,
+      "fish": { "min": 30, "max": 50, "trophy": 62, "trophyChance": 0.08, "rainbow": 0.15 }
+    },
+    {
+      "id": "foam-eddy", "name": "Foam line by the eddy", "type": "seam", "section": "flat",
+      "x": 200, "y": 690, "depth": "1.2 m", "current": "Slow, circling",
+      "description": "A slow back-eddy turns beside the main current and gathers a raft of foam. Spent insects pile up in it. Look for a nose poking through the scum.",
+      "holding": 0.75, "snag": 0.25,
+      "fish": { "min": 28, "max": 46, "trophy": 55, "trophyChance": 0.05, "rainbow": 0.1 }
+    },
+    {
+      "id": "glide", "name": "The glassy flat", "type": "flat", "section": "flat",
+      "x": 330, "y": 765, "depth": "1.0 m", "current": "Slow and smooth",
+      "description": "Smooth as a mirror. Trout cruise and sip here when insects are on the water, and they inspect every fly closely. Any thick tippet, splashy landing or drag will send them away.",
+      "holding": 0.7, "snag": 0.05,
+      "fish": { "min": 26, "max": 48, "trophy": 60, "trophyChance": 0.07, "rainbow": 0.1 }
+    },
+    {
+      "id": "tailout", "name": "The tailout", "type": "flat", "section": "flat",
+      "x": 300, "y": 862, "depth": "0.5 m", "current": "Slow, speeding up at the lip",
+      "description": "The pool shallows and slides toward the next riffle. Fish drop back here to feed at first and last light, very spooky in the thin water.",
+      "holding": 0.6, "snag": 0.05,
+      "fish": { "min": 24, "max": 44, "trophy": 54, "trophyChance": 0.05, "rainbow": 0.15 }
+    }
+  ]
+}
