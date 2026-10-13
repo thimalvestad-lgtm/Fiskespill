@@ -235,10 +235,18 @@ export class Ambience {
     this.burst(0.5 + 0.3 * big, 'lowpass', 0.18 * big + 0.05, [3000, 400]);
   }
 
-  click() {
+  click(pitch = 1800, vol = 0.03) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    this.tone(t, 1800, 1500, 0.025, 0.03, 0, 'square');
+    this.tone(t, pitch, pitch * 0.83, 0.025, vol, 0, 'square');
+  }
+
+  // A trout sipping something off the surface.
+  sip(vol = 1, pan = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.burst(0.18, 'bandpass', 0.05 * vol, [1200, 350]);
+    this.tone(t, 380, 820, 0.07, 0.035 * vol, pan, 'sine');
   }
 
   scream() {

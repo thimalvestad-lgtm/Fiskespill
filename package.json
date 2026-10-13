@@ -9,6 +9,7 @@
     "deploy:embedded": "node scripts/build-embedded.mjs && wrangler deploy --config wrangler.embedded.jsonc"
   },
   "devDependencies": {
+    "three": "^0.169.0",
     "wrangler": "^4.0.0"
   }
 }

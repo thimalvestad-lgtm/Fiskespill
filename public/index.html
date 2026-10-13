@@ -4,13 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Riverbend: a quiet fly fishing game</title>
-  <meta name="description" content="A slow, calm fly fishing game. Read the river, choose your rig and catch trout.">
+  <meta name="description" content="A slow, calm 3D fly fishing game. Read the river, choose your rig, cast to rising trout.">
   <meta name="theme-color" content="#24342b">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "./vendor/three.module.js" } }</script>
 </head>
 <body>
   <header class="topbar">
@@ -22,56 +23,69 @@
       <span class="chip score" id="points" title="Points">0 pts</span>
     </div>
     <div class="top-actions">
+      <button class="icon-btn" id="btn-polar" title="Polarized glasses: cut the glare to see fish" aria-label="Polarized glasses">&#128374;</button>
       <button class="icon-btn" id="btn-guide" title="Field guide" aria-label="Field guide">?</button>
       <button class="icon-btn" id="btn-log" title="Logbook" aria-label="Logbook">&#128214;</button>
       <button class="icon-btn" id="btn-sound" title="Sound on/off" aria-label="Sound on/off">&#128264;</button>
     </div>
   </header>
 
-  <main class="layout">
-    <section class="stage" id="stage">
-      <canvas id="river" aria-label="Top-down view of the river"></canvas>
-      <div class="toast" id="toast" aria-live="polite"></div>
-      <button class="strike" id="strike" hidden>Strike!</button>
-      <div class="fight" id="fight" hidden>
-        <div class="fight-title" id="fight-title">Fish on!</div>
-        <div class="meter"><span>Line tension</span><div class="bar"><div class="fill tension" id="tension"></div><div class="limit"></div></div></div>
-        <div class="meter"><span>Line in</span><div class="bar"><div class="fill progress" id="progress"></div></div></div>
-        <div class="fight-hint">Hold the mouse, your finger or <kbd>Space</kbd> to reel in. Ease off when the fish runs.</div>
-      </div>
+  <main class="stage" id="stage">
+    <canvas id="view" aria-label="The river, seen from the bank"></canvas>
+    <div class="loading" id="loading">Walking down to the river…</div>
+
+    <section class="notes-card" id="notes-card">
+      <button class="notes-head" id="notes-toggle"><span>River notes</span><span class="chev">&#9662;</span></button>
+      <p id="notes" class="notes"></p>
     </section>
 
-    <aside class="panel">
-      <section class="card">
-        <h2>River notes</h2>
-        <p id="notes" class="notes"></p>
-      </section>
+    <div class="map-wrap">
+      <canvas id="minimap" title="Tap a light circle to walk there"></canvas>
+      <span class="map-hint">Tap a circle to walk</span>
+    </div>
 
-      <section class="card">
-        <h2 id="spot-title">Choose a spot</h2>
-        <div id="spot-info" class="spot-info">
-          <p class="muted">Tap one of the faint rings on the river to walk to that spot and read the water.</p>
+    <button class="zoom-btn" id="btn-zoom" title="Look closer (mouse wheel zooms too)" aria-label="Look closer">&#128269;</button>
+    <div class="aim-label" id="aim-label"></div>
+    <div class="toast" id="toast" aria-live="polite"></div>
+    <div class="floaters" id="floaters"></div>
+    <ol class="log" id="log"></ol>
+
+    <button class="strike" id="strike" hidden>Strike!</button>
+
+    <div class="fight" id="fight" hidden>
+      <div class="fight-title" id="fight-title">Fish on!</div>
+      <div class="meter"><span>Tension</span><div class="bar" id="tension-bar"><div class="fill tension" id="tension"></div><div class="limit"></div></div></div>
+      <div class="meter"><span>Line out</span><b id="lineout">0 m</b></div>
+      <div class="drag">
+        <span class="drag-label">Drag</span>
+        <button class="drag-btn" id="drag-down" title="Loosen drag (S / ↓)" aria-label="Loosen drag">&minus;</button>
+        <div class="drag-dial">
+          <div class="bar"><div class="fill dragfill" id="drag-fill"></div><div class="break" id="drag-break"></div></div>
+          <div class="drag-meta"><b id="drag-val">1.8 kg</b><span id="drag-tip"></span></div>
         </div>
-      </section>
-
-      <section class="card rig">
-        <h2>Your rig</h2>
-        <div class="rig-row"><label>Leader</label><div class="seg" id="seg-leader"></div></div>
-        <div class="rig-row"><label>Tippet</label><div class="seg" id="seg-tippet"></div></div>
-        <div class="rig-row"><label>Fly</label><div class="seg" id="seg-fly"></div></div>
-        <div class="rig-row"><label>Size</label><div class="seg" id="seg-size"></div></div>
-        <p class="rig-note" id="rig-note"></p>
-      </section>
-
-      <div class="actions">
-        <button class="primary" id="btn-cast" disabled>Cast</button>
-        <button class="secondary" id="btn-rest" title="Let 20 minutes pass while you watch the water">Sit &amp; watch</button>
+        <button class="drag-btn" id="drag-up" title="Tighten drag (W / ↑)" aria-label="Tighten drag">+</button>
       </div>
+      <button class="reel" id="reel">Hold to reel</button>
+      <div class="fight-hint">Hold <b>Reel</b> (or <kbd>Space</kbd>) to bring the fish in. If the fish pulls harder than the drag, line slips out instead. Too tight and the tippet snaps; too loose and the fish reaches the rocks.</div>
+    </div>
 
-      <section class="card log-card">
-        <ol id="log" class="log"></ol>
-      </section>
-    </aside>
+    <div class="bottombar" id="bottombar">
+      <button class="secondary flybox-btn" id="btn-flybox">
+        <span class="lbl">Fly box</span>
+        <span class="rig-summary" id="rig-summary"></span>
+      </button>
+      <button class="primary" id="btn-cast" disabled>Cast</button>
+      <button class="secondary" id="btn-rest" title="Let 20 minutes pass while you watch the water">Sit &amp; watch</button>
+    </div>
+
+    <section class="flybox" id="flybox" hidden>
+      <div class="flybox-head"><h2>Fly box</h2><button class="close small" id="flybox-close" aria-label="Close">&times;</button></div>
+      <div class="rig-row"><label>Leader</label><div class="seg" id="seg-leader"></div></div>
+      <div class="rig-row"><label>Tippet</label><div class="seg" id="seg-tippet"></div></div>
+      <div class="rig-row"><label>Fly</label><div class="seg" id="seg-fly"></div></div>
+      <div class="rig-row"><label>Size</label><div class="seg" id="seg-size"></div></div>
+      <p class="rig-note" id="rig-note">Changes are tied on before your next cast.</p>
+    </section>
   </main>
 
   <!-- Intro / new day -->
@@ -79,15 +93,16 @@
     <div class="sheet">
       <p class="eyebrow" id="intro-day">Day 1</p>
       <h1>Riverbend</h1>
-      <p class="lede">A quiet stretch of trout stream: a fast riffle, a garden of boulders and a long, glassy flat. Read the water, choose your rig, and see what rises.</p>
+      <p class="lede">A quiet stretch of trout stream: a fast riffle, a garden of boulders and a long, glassy flat. Read the water, watch for rising fish, choose your rig and cast.</p>
       <div class="day-conditions" id="intro-conditions"></div>
       <details class="howto">
         <summary>How to play</summary>
         <ul>
-          <li>Tap a ring on the river to walk to a spot. Each one is a different kind of water.</li>
-          <li>Build your rig: leader length, tippet thickness, fly type and size.</li>
-          <li><b>Cast</b>, then watch the fly drift. When a fish takes, tap <b>Strike!</b></li>
-          <li>Hold to reel in. Ease off when the fish runs, or the tippet will break. In rocky water, though, a fish given too much line will wrap you round a rock.</li>
+          <li><b>Look around</b> by dragging; zoom with the mouse wheel or &#128269;. Tap a circle on the map to walk to another part of the bank.</li>
+          <li><b>Spot fish</b>: tap a dark shape or a flash under the water, or a rise ring, for points. Spotted fish stay marked. Polarized glasses (&#128374;) cut the glare.</li>
+          <li><b>Aim</b> by tapping the water. Land the fly a little <i>upstream</i> of a fish and let the current carry it over. A fly landing right on its head, or line falling across it, spooks the fish.</li>
+          <li><b>Rig up</b> in the Fly box: leader, tippet, dry fly, nymph or dry dropper, and size.</li>
+          <li>When a fish takes, hit <b>Strike!</b> Then hold <b>Reel</b> and use the <b>drag</b> buttons to tighten or loosen.</li>
           <li>The better your rig suits the water and the conditions, the more often fish take, and the bigger they are.</li>
         </ul>
       </details>
@@ -151,16 +166,24 @@
           <p>Flat water and tailouts hold fish mostly when insects are hatching, or in low light at dawn and dusk.</p>
         </div>
         <div>
+          <h3>Spotting fish</h3>
+          <p>Trout are easiest to see in slow, clear water with the sun high. Look for a shadow on the bottom, or a tail that moves. Broken water and coloured water hide them. When fish are rising, the rings give them away.</p>
+        </div>
+        <div>
+          <h3>Presenting the fly</h3>
+          <p>Cast a metre or two <b>upstream</b> of a fish and let the fly drift down to it. A fly that slaps down on a fish's head, or line that falls across it, sends it bolting. On the flat, a long leader keeps the heavy fly line further from the fish.</p>
+        </div>
+        <div>
           <h3>Leader &amp; tippet</h3>
-          <p>In <b>clear, slow water</b>, fish see everything: use a long leader (12 ft or more) and fine tippet (5X–6X). In <b>fast, broken water</b>, a shorter leader gives you control, and a stronger tippet (3X–4X) can stop a fish before it reaches the rocks. Coloured water forgives a thicker tippet. Bright sun makes fish warier; overcast and rain make them bolder.</p>
+          <p>In <b>clear, slow water</b>, use a long leader (12 ft or more) and fine tippet (5X–6X). In <b>fast, broken water</b>, a shorter leader gives control, and a stronger tippet (3X–4X) lets you set the drag tight to stop a fish reaching the rocks. Coloured water forgives a thicker tippet.</p>
         </div>
         <div>
           <h3>Choosing a fly</h3>
-          <p><b>Rising fish?</b> Use a dry fly about the size of the insects you see. <b>Nothing on the surface?</b> Most feeding happens near the bottom, so use a nymph. Go heavier in deep or fast water and smaller on the flat. The <b>dry dropper</b> covers both depths and suits riffles, seams and banks, especially when you're not sure.</p>
+          <p><b>Rising fish?</b> Use a dry fly about the size of the insects you see. <b>Nothing on the surface?</b> Use a nymph: heavier in deep or fast water, smaller on the flat. The <b>dry dropper</b> fishes both depths and suits riffles, seams and banks.</p>
         </div>
         <div>
-          <h3>A day on the river</h3>
-          <p>Dawn and dusk are prime time, and the big browns come out of hiding. Midday sun pushes fish into deep or broken water. Watch the river notes: they tell you what's hatching, and when.</p>
+          <h3>Playing a fish</h3>
+          <p>Set the drag a bit below what your tippet can take. When the fish runs, let the reel give line; when it rests or swims towards you, reel. If the fish heads for cover, a tighter drag (with strong enough tippet) turns it.</p>
         </div>
       </div>
     </div>

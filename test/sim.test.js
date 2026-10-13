@@ -63,3 +63,15 @@ test('the right rig catches more often and bigger', () => {
   };
   assert.ok(avg(good.ev.match) > avg(bad.ev.match) + 5);
 });
+
+test('big fish are pickier than small ones', async () => {
+  const { fishTakeChance } = await import('../public/js/sim.js');
+  const ctx = { water, day: day('overcast', 'clear'), minute: 600 };
+  const s = spot('pool-head');
+  const meh = rig('9', '4X', 'dry', 'small');
+  const small = fishTakeChance(s, meh, ctx, 1, { length: 30 }, 0.4).p;
+  const big = fishTakeChance(s, meh, ctx, 1, { length: 55 }, 0.4).p;
+  assert.ok(small > big * 2, `${small} vs ${big}`);
+  const good = rig('9', '4X', 'nymph', 'large');
+  assert.ok(fishTakeChance(s, good, ctx, 1, { length: 55 }, 0.4).p > big * 3);
+});

@@ -1,16 +1,25 @@
-import { RiverRenderer } from './render.js';
+import * as THREE from 'three';
+import { World } from './world.js';
+import { Fish } from './fish.js';
+import { Tackle } from './tackle.js';
+import { Effects } from './fx.js';
 import { Ambience } from './audio.js';
+import { Minimap } from './minimap.js';
+import { drawTrout } from './fishcard.js';
 import {
-  DAY_START, DAY_END, makeDay, dayPart, activeHatch, formatClock, takeChance,
-  drawFish, catchPoints, rigStars, missHint, CALM_MISSES,
+  DAY_START, DAY_END, makeDay, dayPart, activeHatch, formatClock, catchPoints, rigStars, missHint,
+  CALM_MISSES, populateSpot, fishTakeChance, spotPoints,
 } from './sim.js';
 
 const $ = (id) => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
 const SAVE_KEY = 'riverbend-save-v1';
+const MAX_CAST = 24;
+const EYE = 1.65;
 
 const RANKS = [
   [0, 'Novice'], [300, 'Apprentice'], [1000, 'Angler'], [2500, 'River reader'],
@@ -30,26 +39,38 @@ const ACHIEVEMENTS = [
   { id: 'perfect', name: 'Perfect setup', desc: 'Catch a fish on a three-star rig.' },
   { id: 'dusk', name: 'Last light', desc: 'Catch a fish at dusk.' },
   { id: 'ten', name: 'Good day out', desc: 'Land 10 fish in one day.' },
+  { id: 'eyes', name: 'Sharp eyes', desc: 'Spot 10 fish in one day.' },
+  { id: 'ghost', name: 'The ghost', desc: 'Spot a trout of 50 cm or more.' },
 ];
 
-// --- State --------------------------------------------------------------------
+// --- State ------------------------------------------------------------------
 
 const save = loadSave();
 const state = {
   data: null,
   day: null,
   minute: DAY_START,
-  selected: null,
   rig: save.rig || { leader: '9', tippet: '5X', fly: 'drydropper', size: 'medium' },
   rigChanged: false,
   fresh: {},
-  phase: 'intro', // intro | idle | walking | drift | strike | fight | card | dayend
+  phase: 'intro', // intro | idle | walking | cast | drift | strike | fight | card | dayend
   today: [],
+  spottedToday: 0,
   passive: 0,
+  stand: null,
+  aim: null,
 };
-const scene = { rises: [], splashes: [], angler: null, fly: null, selectedId: null, hoverId: null, minute: DAY_START, fresh: state.fresh };
+save.drag = save.drag || 4;
 
-let renderer, audio;
+let renderer, camera, world, tackle, fx, audio, minimap;
+let fishes = [];
+let yaw = 0, pitch = -0.18;
+let zoom = 1, zoomTarget = 1, baseFov = 62;
+let walk = null, drift = null, strike = null, fight = null;
+let holding = false;
+let dragging = false;
+const recentRises = [];
+const tension = { value: 0 };
 
 function loadSave() {
   try {
@@ -62,7 +83,7 @@ function persist() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {}
 }
 
-// --- Boot -----------------------------------------------------------------------
+// --- Boot ----------------------------------------------------------------------
 
 async function boot() {
   const [river, water, gear, conditions] = await Promise.all(
@@ -71,15 +92,40 @@ async function boot() {
   state.data = { river, water, gear, conditions };
   for (const s of river.spots) state.fresh[s.id] = 1;
 
-  renderer = new RiverRenderer($('river'), river);
+  const canvas = $('view');
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  camera = new THREE.PerspectiveCamera(62, 1, 0.05, 900);
+  world = new World(state.data);
+  fx = new Effects(world.scene);
+  tackle = new Tackle(world.scene, camera);
+  tackle.setFly(state.rig.fly, state.rig.size);
   audio = new Ambience();
   audio.enabled = save.sound !== false;
+  minimap = new Minimap($('minimap'), river, (st) => walkTo(st));
   updateSoundButton();
+  world.setPolarized(save.polarized !== false);
+  $('btn-polar').classList.toggle('off', save.polarized === false);
+  resize();
 
   buildRigUI();
   bindEvents();
+  setStand(river.stands[1], true);
   newDay();
+  $('loading').hidden = true;
   requestAnimationFrame(loop);
+}
+
+function resize() {
+  const stage = $('stage');
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  baseFov = w < h ? 72 : 62;
+  camera.fov = baseFov / zoom;
+  camera.updateProjectionMatrix();
+  tackle.resize(w, h);
 }
 
 function newDay() {
@@ -87,11 +133,15 @@ function newDay() {
   state.day = makeDay(d.conditions);
   state.minute = DAY_START;
   state.today = [];
+  state.spottedToday = 0;
   state.phase = 'intro';
   for (const k in state.fresh) state.fresh[k] = 1;
   save.days = (save.days || 0) + 1;
   persist();
-  scene.rises.length = 0;
+  populate();
+  fx.clearMarks();
+  state.aim = null;
+  fx.setAim(null);
 
   $('intro-day').textContent = `Day ${save.days}`;
   const day = state.day;
@@ -102,7 +152,105 @@ function newDay() {
   updateHUD();
 }
 
-// --- UI -----------------------------------------------------------------------
+function populate() {
+  for (const f of fishes) f.dispose();
+  fishes = [];
+  for (const s of world.spots) {
+    for (const f of populateSpot(s)) {
+      let off = { x: 0, z: 0 };
+      for (let k = 0; k < 10; k++) {
+        const o = { x: rand(-1.3, 1.3), z: rand(-1.3, 1.3) };
+        const x = s.w.x + o.x, z = s.w.z + o.z;
+        if (world.heightAt(x, z) < -0.3 && !fishes.some((q) => Math.hypot(q.home.x - x, q.home.z - z) < 0.6)) { off = o; break; }
+      }
+      fishes.push(new Fish(world, s, { ...f, offset: off }));
+    }
+  }
+}
+
+// --- Camera & stands --------------------------------------------------------------
+
+function standPos(st) {
+  const p = world.m2w(st.x, st.y);
+  return new THREE.Vector3(p.x, world.heightAt(p.x, p.z) + EYE, p.z);
+}
+
+function lookYaw(st) {
+  const p = world.m2w(st.x, st.y), l = world.m2w(st.look[0], st.look[1]);
+  return Math.atan2(-(l.x - p.x), -(l.z - p.z));
+}
+
+function defaultPitch() {
+  const st = $('stage');
+  return st.clientHeight > st.clientWidth ? -0.32 : -0.18;
+}
+
+function setStand(st, instant) {
+  state.stand = st;
+  if (instant) {
+    camera.position.copy(standPos(st));
+    yaw = lookYaw(st);
+    pitch = defaultPitch();
+  }
+  const sec = { riffle: 1, boulders: 0.8, poolhead: 0.55, flat: 0.25 }[st.id] ?? 0.6;
+  audio.set({ riverLevel: sec, riverBright: sec });
+}
+
+function walkTo(st) {
+  if (state.phase !== 'idle' || st === state.stand) return;
+  audio.start();
+  state.phase = 'walking';
+  state.aim = null;
+  fx.setAim(null);
+  $('aim-label').classList.remove('show');
+  const from = camera.position.clone(), to = standPos(st);
+  const fromYaw = yaw;
+  let toYaw = lookYaw(st);
+  while (toYaw - fromYaw > Math.PI) toYaw -= Math.PI * 2;
+  while (toYaw - fromYaw < -Math.PI) toYaw += Math.PI * 2;
+  const dist = from.distanceTo(to);
+  walk = { from, to, fromYaw, toYaw, t: 0, dur: clamp(dist / 9, 1.8, 4.5), st };
+  setZoom(1);
+  tackle.mode = 'hidden';
+  log(`You walk along the bank to the ${st.name.toLowerCase()}.`);
+  updateHUD();
+}
+
+function updateWalk(dt) {
+  walk.t += dt;
+  const k = Math.min(1, walk.t / walk.dur);
+  const e = k * k * (3 - 2 * k);
+  camera.position.lerpVectors(walk.from, walk.to, e);
+  // Rise a little over the bank as you walk.
+  camera.position.y += Math.sin(k * Math.PI) * 0.8 + Math.abs(Math.sin(walk.t * 7)) * 0.04 * (1 - k);
+  yaw = lerp(walk.fromYaw, walk.toYaw, e);
+  pitch = lerp(pitch, defaultPitch(), Math.min(1, dt * 2));
+  if (k >= 1) {
+    const st = walk.st;
+    walk = null;
+    setStand(st, false);
+    tackle.idle();
+    state.phase = 'idle';
+    advance(8);
+  }
+}
+
+function setZoom(z) {
+  zoomTarget = clamp(z, 1, 3.5);
+  $('btn-zoom').classList.toggle('on', zoomTarget > 1.05);
+}
+
+function applyCamera(dt) {
+  if (Math.abs(zoomTarget - zoom) > 0.001) {
+    zoom += (zoomTarget - zoom) * Math.min(1, dt * 8);
+    camera.fov = baseFov / zoom;
+    camera.updateProjectionMatrix();
+  }
+  camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  camera.updateMatrixWorld();
+}
+
+// --- UI -------------------------------------------------------------------------
 
 function buildRigUI() {
   const g = state.data.gear;
@@ -129,21 +277,26 @@ function buildRigUI() {
 }
 
 function setRig(key, id, item) {
-  if (state.phase !== 'idle' && state.phase !== 'intro') return;
+  if (!['idle', 'intro', 'walking'].includes(state.phase)) {
+    toast('Finish this drift first.');
+    return;
+  }
   if (state.rig[key] === id) return;
   state.rig[key] = id;
   state.rigChanged = true;
   save.rig = state.rig;
   persist();
+  tackle.setFly(state.rig.fly, state.rig.size);
   refreshRigUI();
   const label = key === 'size' ? `${item.label} ${state.rig.fly === 'nymph' ? 'nymph' : 'fly'}` : item.label;
   $('rig-note').textContent = `${label}: ${item.note || 'tied on.'}`;
 }
 
 function refreshRigUI() {
-  document.querySelectorAll('.seg button').forEach((b) => {
-    b.classList.toggle('on', state.rig[b.dataset.key] === b.dataset.id);
-  });
+  document.querySelectorAll('.seg button').forEach((b) => b.classList.toggle('on', state.rig[b.dataset.key] === b.dataset.id));
+  const flyLabel = { dry: 'Dry', nymph: 'Nymph', drydropper: 'Dry dropper' }[state.rig.fly];
+  const size = { small: '#18', medium: '#14', large: '#10' }[state.rig.size];
+  $('rig-summary').textContent = `${state.rig.leader} ft · ${state.rig.tippet} · ${flyLabel} ${size}`;
 }
 
 function updateHUD() {
@@ -153,25 +306,16 @@ function updateHUD() {
   $('clarity').textContent = `${state.day.clarity.label} water`;
   $('points').textContent = `${save.points.toLocaleString('en')} pts`;
   $('notes').textContent = riverNotes();
-  $('btn-cast').disabled = !state.selected || state.phase !== 'idle';
-  $('btn-rest').disabled = state.phase !== 'idle';
-  scene.minute = state.minute;
-  const hatch = activeHatch(state.day, state.minute);
-  scene.hatch = !!hatch;
-  scene.rain = state.day.weather.id === 'drizzle';
-  scene.overcast = state.day.weather.id === 'overcast' ? 0.1 : state.day.weather.id === 'drizzle' ? 0.16 : 0;
-  scene.mist = state.minute < 480 ? clamp((480 - state.minute) / 90, 0, 1) : 0;
-  scene.wind = state.day.weather.id === 'sunny' ? 0.4 : 0.7;
-  if (audio) {
-    const sec = state.selected ? state.data.river.sections.find((s) => s.id === state.selected.section) : null;
-    audio.set({
-      part: dayPart(d.water, state.minute).id,
-      rain: scene.rain,
-      wind: scene.wind,
-      riverLevel: sec ? sec.noise : 0.55,
-      riverBright: sec ? sec.noise : 0.5,
-    });
-  }
+  const idle = state.phase === 'idle';
+  $('btn-cast').disabled = !(idle && state.aim) && state.phase !== 'drift';
+  $('btn-cast').textContent = state.phase === 'drift' ? 'Pick up' : 'Cast';
+  $('btn-rest').disabled = !idle;
+  world.setConditions(state.minute, state.day.weather.id, state.day.clarity.id);
+  audio.set({
+    part: dayPart(d.water, state.minute).id,
+    rain: state.day.weather.id === 'drizzle',
+    wind: state.day.weather.id === 'sunny' ? 0.4 : 0.7,
+  });
 }
 
 function riverNotes() {
@@ -185,24 +329,8 @@ function riverNotes() {
   return text;
 }
 
-function showSpot(spot) {
-  const wt = state.data.water.types[spot.type];
-  const sec = state.data.river.sections.find((s) => s.id === spot.section);
-  $('spot-title').textContent = spot.name;
-  const fresh = state.fresh[spot.id];
-  const restNote = fresh < 0.5 ? '<p class="muted">You’ve disturbed this spot. The fish need a while to settle again.</p>' : '';
-  $('spot-info').innerHTML = `
-    <div class="tags">
-      <span class="tag type">${wt.label}</span>
-      <span class="tag">${sec.label}</span>
-      <span class="tag">Depth ${spot.depth}</span>
-      <span class="tag">${spot.current}</span>
-    </div>
-    <p>${spot.description}</p>${restNote}`;
-}
-
 let toastTimer;
-function toast(text, ms = 3800) {
+function toast(text, ms = 4200) {
   const t = $('toast');
   t.textContent = text;
   t.classList.add('show');
@@ -216,7 +344,20 @@ function log(text) {
   li.appendChild(document.createTextNode(text));
   const ol = $('log');
   ol.prepend(li);
-  while (ol.children.length > 6) ol.lastChild.remove();
+  while (ol.children.length > 3) ol.lastChild.remove();
+}
+
+function floatText(text, worldPos, cls = '') {
+  const p = worldPos.clone().project(camera);
+  if (p.z > 1) return;
+  const el = document.createElement('div');
+  el.className = `floater ${cls}`;
+  el.textContent = text;
+  const stage = $('stage');
+  el.style.left = `${(p.x * 0.5 + 0.5) * stage.clientWidth}px`;
+  el.style.top = `${(-p.y * 0.5 + 0.5) * stage.clientHeight}px`;
+  $('floaters').appendChild(el);
+  setTimeout(() => el.remove(), 2600);
 }
 
 function updateSoundButton() {
@@ -225,7 +366,7 @@ function updateSoundButton() {
   b.innerHTML = audio.enabled ? '&#128264;' : '&#128263;';
 }
 
-// --- Time ----------------------------------------------------------------------
+// --- Time --------------------------------------------------------------------------
 
 function advance(minutes) {
   const before = state.minute;
@@ -235,13 +376,12 @@ function advance(minutes) {
   const hatchAfter = activeHatch(state.day, state.minute);
   if (hatchAfter && hatchAfter !== hatchBefore) {
     log(`Something is happening on the water: ${hatchAfter.label.toLowerCase()}.`);
-    toast(hatchAfter.signs, 6500);
+    toast(hatchAfter.signs, 7000);
   } else if (!hatchAfter && hatchBefore) {
     log('The hatch fades and the surface goes quiet.');
   }
   updateHUD();
-  if (state.selected) showSpot(state.selected);
-  if (state.minute >= DAY_END && (state.phase === 'idle' || state.phase === 'walking')) endDay();
+  if (state.minute >= DAY_END && state.phase === 'idle') endDay();
 }
 
 function endDay() {
@@ -249,171 +389,298 @@ function endDay() {
   const n = state.today.length;
   const pts = state.today.reduce((s, c) => s + c.points, 0);
   const best = state.today.reduce((b, c) => (!b || c.length > b.length ? c : b), null);
+  const spotted = state.spottedToday ? ` You spotted ${state.spottedToday} fish.` : '';
   $('dayend-text').textContent = n
-    ? `You landed ${n} trout today, for ${pts} points. The biggest was a ${best.length} cm ${best.species === 'rainbow' ? 'rainbow' : 'brown'} from the ${best.spotName.toLowerCase()}.`
-    : 'No fish today. Some days the river just keeps its secrets. Tomorrow will be different.';
-  $('dayend-list').innerHTML = state.today
-    .map((c) => `<li>${c.time}: ${c.length} cm ${c.species} trout, ${c.spotName}</li>`)
-    .join('');
+    ? `You landed ${n} trout today, for ${pts} catch points. The biggest was a ${best.length} cm ${best.species} from the ${best.spotName.toLowerCase().replace(/^the /, '')}.${spotted}`
+    : `No fish landed today. Some days the river keeps its secrets.${spotted} Tomorrow will be different.`;
+  $('dayend-list').innerHTML = state.today.map((c) => `<li>${c.time}: ${c.length} cm ${c.species} trout, ${c.spotName}</li>`).join('');
   $('dayend').hidden = false;
 }
 
-// --- Spot selection & walking ----------------------------------------------------
+// --- Aiming & spotting --------------------------------------------------------------
 
-function selectSpot(spot) {
-  if (state.phase !== 'idle') return;
-  if (state.selected && state.selected.id === spot.id) return;
-  const first = !state.selected;
-  state.selected = spot;
-  scene.selectedId = spot.id;
-  scene.fly = null;
-  const target = renderer.standFor(spot);
-  showSpot(spot);
-  if (first) {
-    scene.angler = target;
-    updateHUD();
+const ray = new THREE.Raycaster();
+const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+function waterPointAt(px, py) {
+  const r = $('view').getBoundingClientRect();
+  const ndc = new THREE.Vector2(((px - r.left) / r.width) * 2 - 1, -((py - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const p = new THREE.Vector3();
+  if (!ray.ray.intersectPlane(plane, p)) return null;
+  return p;
+}
+
+function lieAt(p) {
+  let best = null, bd = 3.2;
+  for (const s of world.spots) {
+    const d = Math.hypot(s.w.x - p.x, s.w.z - p.z);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+function describeAim(p) {
+  const dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+  if (!world.inWater(p.x, p.z)) return { ok: false, text: 'That’s dry land.' };
+  if (dist > MAX_CAST) return { ok: false, text: `Too far to cast (${Math.round(dist)} m).` };
+  if (dist < 3) return { ok: false, text: 'Too close. You’d spook everything.' };
+  const lie = lieAt(p);
+  const wt = lie ? state.data.water.types[lie.type].label.toLowerCase() : null;
+  return { ok: true, dist, lie, text: lie ? `${lie.name} · ${wt} · ${Math.round(dist)} m` : `Open water · ${Math.round(dist)} m` };
+}
+
+function screenOf(v) {
+  const p = v.clone().project(camera);
+  const r = $('view').getBoundingClientRect();
+  return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height, behind: p.z > 1 };
+}
+
+function trySpot(px, py) {
+  const now = world.time;
+  let best = null, bd = 30 + 12 * zoom;
+  for (const f of fishes) {
+    if (f.spotted || f.hidden || f.state === 'hooked') continue;
+    const risen = recentRises.some((r) => r.fish === f && now - r.t < 3.5);
+    if (f.vis < 0.18 && !risen) continue;
+    const s = screenOf(new THREE.Vector3(f.pos.x, risen ? 0 : f.pos.y, f.pos.z));
+    if (s.behind) continue;
+    const d = Math.hypot(s.x - px, s.y - py);
+    if (d < bd) { bd = d; best = f; }
+  }
+  if (!best) return false;
+  best.spotted = true;
+  state.spottedToday++;
+  const pts = spotPoints(best.length);
+  save.points += pts;
+  fx.mark(best);
+  const sz = Math.round(best.length / 5) * 5;
+  const kind = best.length >= 50 ? 'a big trout' : best.length >= 40 ? 'a good trout' : 'a trout';
+  const where = best.spot.name.toLowerCase().replace(/^the /, '');
+  const msg = `Spotted ${kind}, around ${sz} cm, in the ${where}.`;
+  log(msg);
+  toast(`${msg} +${pts}`);
+  floatText(`+${pts} spotted`, new THREE.Vector3(best.pos.x, 0.2, best.pos.z), 'spot');
+  audio.click(2600, 0.02);
+  if (state.spottedToday >= 10) give('eyes');
+  if (best.length >= 50) give('ghost');
+  persist();
+  updateHUD();
+  return true;
+}
+
+function setAimAt(px, py) {
+  const p = waterPointAt(px, py);
+  if (!p) return;
+  const a = describeAim(p);
+  if (!a.ok) {
+    toast(a.text, 2000);
     return;
   }
-  state.phase = 'walking';
-  const from = { ...scene.angler };
-  const dist = Math.hypot(target.x - from.x, target.y - from.y);
-  const dur = clamp(dist / 140, 0.6, 2.5);
-  let t = 0;
-  walkAnim = (dt) => {
-    t += dt;
-    const k = Math.min(1, t / dur);
-    const e = k * k * (3 - 2 * k);
-    scene.angler = { x: from.x + (target.x - from.x) * e, y: from.y + (target.y - from.y) * e };
-    if (k >= 1) {
-      walkAnim = null;
-      state.phase = 'idle';
-      advance(Math.round(4 + dist / 60));
-    }
-  };
+  state.aim = p;
+  fx.setAim(p);
+  $('aim-label').textContent = a.text;
+  $('aim-label').classList.add('show');
   updateHUD();
 }
-let walkAnim = null;
 
-// --- Casting -----------------------------------------------------------------------
-
-let drift = null;
+// --- Casting ------------------------------------------------------------------------------
 
 function cast() {
-  if (state.phase !== 'idle' || !state.selected) return;
+  if (state.phase === 'drift') return pickUp();
+  if (state.phase !== 'idle' || !state.aim) return;
   audio.start();
-  const spot = state.selected;
-  const ctx = { water: state.data.water, day: state.day, minute: state.minute };
-  const res = takeChance(spot, state.rig, ctx, state.fresh[spot.id]);
-  const take = Math.random() < res.p;
-  const sec = state.data.river.sections.find((s) => s.id === spot.section);
-  const dur = clamp(3.2 / (sec.speed + 0.25), 3, 8);
-  const lat = rand(-8, 8);
-  drift = {
-    spot, res, take, dur,
-    t: -0.7, // line in the air first
-    takeAt: rand(0.35, 0.7) * dur,
-    from: { x: spot.x + lat, y: spot.y - 55 },
-    to: { x: spot.x + lat * 0.6, y: spot.y + 32 },
-    landed: false,
-  };
   if (state.rigChanged) {
-    advance(3);
     log('You retie your rig.');
     state.rigChanged = false;
+    advance(2);
   }
-  state.phase = 'drift';
-  // On phones the river can be scrolled out of view; bring it back for the drift.
-  const stageTop = $('stage').getBoundingClientRect().top;
-  if (stageTop < -40) $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
-  scene.fly = { x: scene.angler.x, y: scene.angler.y, visible: true, kind: state.rig.fly, gone: false, dip: 0 };
+  state.phase = 'cast';
+  const target = state.aim.clone();
+  // A little natural inaccuracy, more at long range.
+  const dist = Math.hypot(target.x - camera.position.x, target.z - camera.position.z);
+  const err = 0.15 + dist * 0.02;
+  target.x += rand(-err, err);
+  target.z += rand(-err, err);
+  if (!world.inWater(target.x, target.z)) target.copy(state.aim);
+  target.y = 0;
+  tackle.startCast(target, () => land(target));
   audio.cast();
+  setTimeout(() => audio.cast(), 650);
+  $('aim-label').classList.remove('show');
+  fx.setHover(null);
+  updateHUD();
+}
+
+function land(p) {
+  audio.plop();
+  fx.ring(p.x, p.z, state.rig.size === 'large' ? 0.5 : 0.3, 1.2);
+  drift = { pos: p.clone(), t: 0, passed: new Set(), near: new Map(), engaged: false, start: p.clone() };
+  state.phase = 'drift';
+  advance(2);
+  spookCheck(p);
+  updateHUD();
+}
+
+// Fish that see the line, or the fly landing on their heads, bolt.
+function spookCheck(p) {
+  const cam = camera.position;
+  let spooked = 0;
+  for (const f of fishes) {
+    if (f.hidden || f.state !== 'hold') continue;
+    const wt = state.data.water.types[f.spot.type];
+    const sp = wt.spookiness * state.day.weather.spook;
+    const leaderShort = { '7.5': 1.6, '9': 1.2, '12': 0.8, '15': 0.7 }[state.rig.leader];
+    const dLand = Math.hypot(f.pos.x - p.x, f.pos.z - p.z);
+    const plop = state.rig.size === 'large' || state.rig.fly === 'nymph' ? 1.3 : 1;
+    let chance = 0;
+    if (dLand < 0.6 * plop) chance = 0.35 + 0.5 * sp;
+    else if (dLand < 1.4 * plop && sp > 0.6) chance = 0.4 * sp;
+    // Lining: the fly line falling over the fish.
+    const ax = p.x - cam.x, az = p.z - cam.z;
+    const len = Math.hypot(ax, az);
+    const tproj = ((f.pos.x - cam.x) * ax + (f.pos.z - cam.z) * az) / (len * len);
+    if (tproj > 0.1 && tproj < 1 - 2.5 / len) {
+      const cx = cam.x + ax * tproj, cz = cam.z + az * tproj;
+      const dLine = Math.hypot(f.pos.x - cx, f.pos.z - cz);
+      if (dLine < 0.7) chance = Math.max(chance, (0.25 + 0.35 * sp) * leaderShort);
+    }
+    if (chance > 0 && Math.random() < chance * (0.5 + 0.5 * state.fresh[f.spot.id])) {
+      f.spook(p.x, p.z);
+      spooked++;
+      state.fresh[f.spot.id] = Math.max(0, state.fresh[f.spot.id] - 0.2);
+      fx.ring(f.pos.x, f.pos.z, 0.6, 1);
+    }
+  }
+  if (spooked) {
+    const msg = spooked > 1
+      ? 'Dark shapes shoot off upstream. The line came down right over them. Land the fly a metre or two upstream of the fish instead.'
+      : 'A dark shape bolts from under the fly. It landed too close, or the line fell over the fish. Aim a metre or two upstream and let the current bring the fly down.';
+    log(msg);
+    toast(msg, 6000);
+  }
+}
+
+function pickUp() {
+  if (state.phase !== 'drift') return;
+  endDrift(true);
+}
+
+function endDrift(pickedUp) {
+  const d = drift;
+  drift = null;
+  tackle.idle();
+  tackle.hideFly = false;
+  tackle.dip = 0;
+  state.phase = 'idle';
+  if (d && !d.engaged && !d.refused) {
+    // What happened (or didn't) in the lie we were fishing?
+    const lie = lieAt(d.start) || lieAt(d.pos);
+    if (lie) {
+      const ctx = { water: state.data.water, day: state.day, minute: state.minute };
+      const res = fishTakeChance(lie, state.rig, ctx, state.fresh[lie.id], { length: lie.fish.min }, 0.5);
+      state.fresh[lie.id] = Math.max(0, state.fresh[lie.id] - 0.04);
+      const hint = missHint(lie, state.rig, res.ev);
+      const msg = hint && Math.random() < 0.7 ? hint : pick(CALM_MISSES);
+      if (!pickedUp) { log(msg); toast(msg); }
+    } else if (!pickedUp) {
+      const msg = d.passed.size ? pick(CALM_MISSES) : 'The fly drifted through open water. Few fish live there. Try drifting it through a lie.';
+      log(msg);
+      toast(msg);
+    }
+  }
   updateHUD();
 }
 
 function updateDrift(dt) {
   const d = drift;
   d.t += dt;
-  if (d.t < 0) {
-    // Line unrolling through the air.
-    const k = (d.t + 0.7) / 0.7;
-    scene.fly.x = scene.angler.x + (d.from.x - scene.angler.x) * k;
-    scene.fly.y = scene.angler.y + (d.from.y - scene.angler.y) * k - Math.sin(k * Math.PI) * 30;
-    return;
+  const flow = world.flowAt(d.pos.x, d.pos.z);
+  if (!d.engaged) {
+    d.pos.x += flow.vx * dt;
+    d.pos.z += flow.vz * dt;
   }
-  if (!d.landed) {
-    d.landed = true;
-    audio.plop();
-    const ev = d.res.ev;
-    // A short leader on spooky water: the fish see the line land.
-    if (ev.factors.leader < 0.5 && state.data.water.types[d.spot.type].spookiness > 0.5 && Math.random() < 0.5) {
-      scene.splashes.push({ x: d.spot.x + rand(-10, 10), y: d.spot.y + rand(-5, 15), age: 0, life: 0.6, size: 0.5 });
+  const cam = camera.position;
+  // The line on the water: entry point near you, a belly pulled downstream.
+  const entry = new THREE.Vector3(lerp(cam.x, d.pos.x, 0.28), 0, lerp(cam.z, d.pos.z, 0.28));
+  const belly = new THREE.Vector3(flow.vx, 0, flow.vz).multiplyScalar(Math.min(2.5, d.t * 0.35));
+  tackle.setDrift(d.pos, entry, belly);
+
+  if (!d.engaged) {
+    const ctx = { water: state.data.water, day: state.day, minute: state.minute };
+    for (const f of fishes) {
+      if (f.hidden || f.state !== 'hold' || d.passed.has(f)) continue;
+      const now = Math.hypot(f.pos.x - d.pos.x, f.pos.z - d.pos.z);
+      if (now > 1.6) continue;
+      // Judge the fly at its closest pass, as it drifts over the fish.
+      const best = d.near.get(f);
+      if (best === undefined || now < best) d.near.set(f, now);
+      if (now > 0.4 && (best === undefined || now <= best + 0.03)) continue;
+      const dist = Math.min(now, best ?? now);
+      d.passed.add(f);
+      const res = fishTakeChance(f.spot, state.rig, ctx, state.fresh[f.spot.id], f, dist);
+      const surface = state.rig.fly === 'dry' || (state.rig.fly === 'drydropper' && Math.random() < 0.45);
+      if (Math.random() < res.p) {
+        d.engaged = true;
+        d.fish = f;
+        d.ev = res.ev;
+        d.surface = surface;
+        f.approach(d.pos, surface, true, () => takeFly(f));
+        break;
+      } else if (res.ev.match > 0.3 && Math.random() < 0.4 * (1 - res.ev.match * 0.6)) {
+        d.refused = true;
+        f.approach(d.pos, surface, false, () => {
+          const hint = missHint(f.spot, state.rig, res.ev) || 'A trout came up for a look, then sank back. Maybe the fly dragged a little. Try again.';
+          log(hint);
+          toast(hint, 5000);
+          if (surface) fx.ring(d.pos.x + 0.1, d.pos.z + 0.2, 0.35, 1.3);
+        });
+        break;
+      }
     }
   }
-  const k = Math.min(1, d.t / d.dur);
-  scene.fly.x = d.from.x + (d.to.x - d.from.x) * k + Math.sin(d.t * 2) * 1.2;
-  scene.fly.y = d.from.y + (d.to.y - d.from.y) * k;
 
-  if (d.take && d.t >= d.takeAt) {
-    startStrike();
-    return;
-  }
-  if (k >= 1) {
-    drift = null;
-    scene.fly = null;
-    const spot = d.spot;
-    const wt = state.data.water.types[spot.type];
-    state.fresh[spot.id] = Math.max(0, state.fresh[spot.id] - (0.035 + 0.12 * (1 - d.res.ev.factors.leader) * wt.spookiness));
-    const hint = missHint(spot, state.rig, d.res.ev);
-    const msg = hint && Math.random() < 0.75 ? hint : pick(CALM_MISSES);
-    log(msg);
-    toast(msg);
-    state.phase = 'idle';
-    advance(6);
-  }
+  // End of the drift: the fly has come round, hit the bank or dragged.
+  const toCam = Math.hypot(d.pos.x - cam.x, d.pos.z - cam.z);
+  if (!d.engaged && (d.t > 11 || toCam < 3.5 || !world.inWater(d.pos.x, d.pos.z) || d.pos.z - cam.z > 6)) endDrift(false);
 }
 
-// --- Strike ------------------------------------------------------------------------------
+// --- Take, strike, fight -----------------------------------------------------------------
 
-let strike = null;
-function startStrike() {
-  const d = drift;
+function takeFly(f) {
+  if (state.phase !== 'drift' || !drift) return;
   state.phase = 'strike';
-  const surface = state.rig.fly === 'dry';
-  if (surface) {
-    scene.fly.gone = true;
-    scene.rises.push({ x: scene.fly.x, y: scene.fly.y, age: 0, life: 1.4, size: 10, drift: 0 });
-    scene.splashes.push({ x: scene.fly.x, y: scene.fly.y, age: 0, life: 0.5, size: 0.6 });
-    audio.splash(0.4);
-  } else if (state.rig.fly === 'drydropper') {
-    scene.fly.dip = 3;
-    scene.fly.gone = true;
-    scene.rises.push({ x: scene.fly.x, y: scene.fly.y, age: 0, life: 1, size: 5, drift: 0 });
-    audio.plop();
+  const d = drift;
+  const p = d.pos;
+  if (d.surface) {
+    fx.ring(p.x, p.z, 0.7, 1.6);
+    fx.splash(p.x, 0, p.z, 10, 0.5);
+    tackle.hideFly = true;
+    audio.sip(1.3);
+    log('A nose breaks the surface and your fly is gone!');
   } else {
-    scene.fly.dip = 4;
+    tackle.dip = 0.03;
     audio.plop();
+    log('The indicator twitches and stops!');
   }
-  strike = { t: 0, window: surface ? 1.7 : 1.4 };
+  strike = { t: 0, window: d.surface ? 1.6 : 1.3 };
   $('strike').hidden = false;
-  $('strike').focus({ preventScroll: true });
-  log(surface ? 'A nose breaks the surface and your fly is gone!' : 'The indicator twitches and stops!');
 }
 
 function updateStrike(dt) {
   strike.t += dt;
-  if (scene.fly) scene.fly.dip = Math.max(0, (scene.fly.dip || 0) - dt * 2);
   if (strike.t > strike.window) {
     $('strike').hidden = true;
-    const spot = drift.spot;
-    state.fresh[spot.id] = Math.max(0, state.fresh[spot.id] - 0.15);
-    drift = null;
+    const f = drift.fish;
+    f.state = 'returning';
+    f.wary = 1;
+    state.fresh[f.spot.id] = Math.max(0, state.fresh[f.spot.id] - 0.15);
     strike = null;
-    scene.fly = null;
+    drift.refused = true;
     const msg = 'Too slow. The trout felt the fly and let go.';
     log(msg);
     toast(msg);
-    state.phase = 'idle';
-    advance(5);
+    endDrift(true);
   }
 }
 
@@ -421,195 +688,311 @@ function doStrike() {
   if (state.phase !== 'strike') return;
   $('strike').hidden = true;
   audio.start();
-  const d = drift;
   strike = null;
+  const d = drift;
+  const f = d.fish;
   if (Math.random() < 0.1) {
-    drift = null;
-    scene.fly = null;
+    f.state = 'returning';
+    f.wary = 1;
     const msg = 'You lift into it, but the hook doesn’t find a hold.';
     log(msg);
     toast(msg);
-    state.fresh[d.spot.id] = Math.max(0, state.fresh[d.spot.id] - 0.15);
-    state.phase = 'idle';
-    advance(5);
+    state.fresh[f.spot.id] = Math.max(0, state.fresh[f.spot.id] - 0.15);
+    d.refused = true;
+    endDrift(true);
     return;
   }
-  const part = dayPart(state.data.water, state.minute).id;
-  const fish = drawFish(d.spot, d.res.ev.match, part);
-  startFight(d, fish);
+  startFight(d, f);
 }
 
-// --- Fight --------------------------------------------------------------------------------
-
-let fight = null;
-let holding = false;
-
-function startFight(d, fish) {
+function startFight(d, f) {
   state.phase = 'fight';
+  drift = null;
+  tackle.hideFly = false;
+  tackle.dip = 0;
+  f.state = 'hooked';
   const tip = state.data.gear.tippets.find((t) => t.id === state.rig.tippet);
-  const kg = fish.weightG / 1000;
+  const foot = new THREE.Vector3(camera.position.x, 0, camera.position.z);
+  const away = new THREE.Vector3(f.pos.x - foot.x, 0, f.pos.z - foot.z).normalize();
   fight = {
-    d, fish, kg,
+    fish: f, ev: d.ev, foot,
     strength: tip.strengthKg,
     stamina: 1,
     running: false,
     runLeft: 0,
-    tension: 0,
+    dir: away.clone(),
+    speed: 0.4,
+    lineOut: Math.hypot(f.pos.x - foot.x, f.pos.z - foot.z),
+    tensionKg: 0,
     over: 0,
     snag: 0,
-    progress: 0.08,
+    slackT: 0,
     clickT: 0,
-    pos: { x: scene.fly.x, y: scene.fly.y },
-    wob: 0,
+    jump: null,
+    mouth: new THREE.Vector3(),
   };
-  scene.fly.gone = true;
-  scene.fly.tight = true;
   $('fight').hidden = false;
-  $('fight-title').textContent = kg > 1.2 ? 'Fish on! It feels heavy...' : 'Fish on!';
-  audio.splash(Math.min(1.4, 0.4 + kg));
-  scene.splashes.push({ x: fight.pos.x, y: fight.pos.y, age: 0, life: 0.7, size: 0.6 + kg * 0.4 });
-  // Big fish run immediately.
-  if (kg > 0.8) startRun();
+  $('bottombar').hidden = true;
+  $('flybox').hidden = true;
+  updateDragUI();
+  $('fight-title').textContent = f.kg > 1.2 ? 'Fish on! It feels heavy...' : 'Fish on!';
+  audio.splash(Math.min(1.4, 0.4 + f.kg));
+  fx.splash(f.pos.x, 0, f.pos.z, 25, 0.8 + f.kg * 0.2);
+  fx.ring(f.pos.x, f.pos.z, 1.2, 1.4);
+  if (f.kg > 0.7) startRun();
 }
 
 function startRun() {
+  const f = fight.fish;
   fight.running = true;
-  fight.runLeft = rand(0.8, 1.6 + fight.kg * 0.6);
-  if (!holding) audio.scream();
-  $('fight-title').textContent = 'It’s running!';
+  fight.runLeft = rand(1, 2 + f.kg * 0.8);
+  const away = new THREE.Vector3(f.pos.x - fight.foot.x, 0, f.pos.z - fight.foot.z).normalize();
+  const a = rand(-0.9, 0.9);
+  fight.dir.set(away.x * Math.cos(a) - away.z * Math.sin(a), 0, away.x * Math.sin(a) + away.z * Math.cos(a));
+  fight.toCover = false;
+  if (f.spot.snag > 0.3 && Math.random() < 0.65) {
+    // Bolt for the nearest rock or the roots of the bank.
+    let best = null, bd = 10;
+    for (const r of world.rocks) {
+      const dd = Math.hypot(r.x - f.pos.x, r.z - f.pos.z);
+      if (dd < bd && r.r > 0.5) { bd = dd; best = r; }
+    }
+    if (f.spot.type === 'bank') best = { x: f.spot.w.x + 1.2, z: f.spot.w.z };
+    if (best) {
+      fight.dir.set(best.x - f.pos.x, 0, best.z - f.pos.z).normalize();
+      fight.toCover = true;
+    }
+  }
+  fight.speed = 1.4 + f.kg * 0.9;
+  $('fight-title').textContent = fight.toCover ? 'It’s heading for cover!' : 'It’s running!';
+  fight.jumpSoon = Math.random() < (f.species === 'rainbow' ? 0.6 : 0.15);
+}
+
+function dragKg() {
+  return save.drag * 0.45;
+}
+
+function updateDragUI() {
+  const s = fight ? fight.strength : 2;
+  $('drag-val').textContent = `${dragKg().toFixed(1)} kg`;
+  $('drag-fill').style.width = `${(dragKg() / 3.6) * 100}%`;
+  $('drag-break').style.left = `${(s / 3.6) * 100}%`;
+  $('drag-tip').textContent = `${state.rig.tippet} breaks at ${s.toFixed(1)} kg`;
+}
+
+function setDrag(delta) {
+  save.drag = clamp(save.drag + delta, 1, 8);
+  persist();
+  audio.click(900 + save.drag * 150, 0.04);
+  updateDragUI();
 }
 
 function updateFight(dt) {
-  const f = fight;
-  // Runs come less often as the fish tires.
-  if (!f.running && Math.random() < dt * (0.15 + 0.35 * f.stamina) * Math.min(1.5, 0.5 + f.kg)) startRun();
-  if (f.running) {
-    f.runLeft -= dt;
-    if (f.runLeft <= 0) {
-      f.running = false;
-      $('fight-title').textContent = f.stamina < 0.3 ? 'It’s tiring...' : 'Fish on!';
+  const F = fight;
+  const f = F.fish;
+  const drag = dragKg();
+
+  if (!F.running && Math.random() < dt * (0.12 + 0.35 * F.stamina) * Math.min(1.5, 0.5 + f.kg)) startRun();
+  if (F.running) {
+    F.runLeft -= dt;
+    if (F.runLeft <= 0) {
+      F.running = false;
+      F.speed = 0.35 + 0.3 * F.stamina;
+      $('fight-title').textContent = F.stamina < 0.3 ? 'It’s tiring...' : 'Fish on!';
+      // Sometimes the fish swims towards you, throwing slack.
+      if (Math.random() < 0.3) F.dir.set(F.foot.x - f.pos.x, 0, F.foot.z - f.pos.z).normalize();
     }
-  }
-  const pull = f.kg * 0.9 * (f.running ? 1.9 : 1) * (0.4 + 0.6 * f.stamina);
-  const target = holding ? pull + 0.3 : Math.min(pull * 0.6, f.strength * 0.45);
-  f.tension += (target / f.strength - f.tension) * Math.min(1, dt * 7);
-
-  if (holding) f.progress += dt * (f.running ? -0.01 : 0.08 + 0.09 * (1 - f.stamina));
-  else f.progress -= dt * (f.running ? 0.06 : 0);
-  f.progress = clamp(f.progress, 0, 1);
-
-  const drain = (0.06 + (f.running ? 0.05 : 0) + (holding ? 0.04 : 0)) / (0.6 + f.kg * 0.5);
-  f.stamina = Math.max(0, f.stamina - dt * drain);
-
-  // Too much tension for too long breaks the tippet.
-  if (f.tension > 0.88) f.over += dt;
-  else f.over = Math.max(0, f.over - dt * 1.5);
-  // In rocky water, a running fish given free line heads for the rocks.
-  const snagRisk = f.d.spot.snag;
-  if (f.running && !holding && snagRisk > 0.3) f.snag += dt * snagRisk * 0.9;
-  else f.snag = Math.max(0, f.snag - dt * 0.4);
-
-  // Reel clicks and the screaming reel.
-  f.clickT -= dt;
-  if (f.clickT <= 0) {
-    if (holding && !f.running) { audio.click(); f.clickT = 0.09; }
-    else if (f.running && !holding) { audio.scream(); f.clickT = 0.35; }
-    else f.clickT = 0.1;
+  } else {
+    // Wandering, shaking its head.
+    const a = rand(-1, 1) * dt * 1.5;
+    F.dir.set(F.dir.x * Math.cos(a) - F.dir.z * Math.sin(a), 0, F.dir.x * Math.sin(a) + F.dir.z * Math.cos(a));
   }
 
-  // Move the fish between where it was hooked and the angler.
-  f.wob += dt * (f.running ? 6 : 2.5);
-  const a = scene.angler;
-  const home = f.d.spot;
-  const k = f.progress;
-  f.pos.x = home.x + (a.x - home.x) * k * 0.85 + Math.sin(f.wob) * (6 + 10 * f.stamina) * (1 - k * 0.6);
-  f.pos.y = home.y + (a.y - home.y) * k * 0.85 + Math.cos(f.wob * 0.7) * 5;
-  scene.fly.x = f.pos.x;
-  scene.fly.y = f.pos.y;
-  if (f.running && Math.random() < dt * 2.5) {
-    scene.splashes.push({ x: f.pos.x, y: f.pos.y, age: 0, life: 0.5, size: 0.4 + f.kg * 0.3 });
-    if (Math.random() < 0.4) audio.splash(0.3);
+  // Move the fish, staying in the water.
+  const next = f.pos.clone().addScaledVector(F.dir, F.speed * dt);
+  if (world.heightAt(next.x, next.z) > -0.25) {
+    const { cx } = world.channel(f.pos.z);
+    F.dir.set(cx - f.pos.x, 0, rand(-0.5, 0.5)).normalize();
+  } else {
+    f.pos.x = next.x;
+    f.pos.z = next.z;
   }
 
-  $('tension').style.width = `${clamp(f.tension, 0, 1.1) / 1.1 * 100}%`;
-  $('progress').style.width = `${f.progress * 100}%`;
+  const pull = f.kg * 0.9 * (F.running ? 1.9 : 1) * (0.4 + 0.6 * F.stamina);
+  if (holding && pull <= drag) F.lineOut -= dt * 1.3 * (F.running ? 0.3 : 1);
+  F.lineOut = Math.max(1.5, F.lineOut);
+  const dist = Math.hypot(f.pos.x - F.foot.x, f.pos.z - F.foot.z);
+  let given = 0, t;
+  if (dist > F.lineOut) {
+    if (pull > drag) {
+      given = dist - F.lineOut;
+      F.lineOut = dist;
+      t = drag;
+    } else {
+      // Held: the fish can't take line, and is drawn towards you.
+      const k = F.lineOut / dist;
+      f.pos.x = F.foot.x + (f.pos.x - F.foot.x) * k;
+      f.pos.z = F.foot.z + (f.pos.z - F.foot.z) * k;
+      t = pull;
+    }
+    if (holding) t += 0.3;
+    F.slackT = 0;
+  } else {
+    const slack = F.lineOut - dist;
+    t = slack > 0.6 ? 0.05 : pull * 0.6 + (holding ? 0.3 : 0);
+    if (slack > 2.5) F.slackT += dt;
+    else F.slackT = 0;
+  }
+  F.tensionKg = lerp(F.tensionKg, t, Math.min(1, dt * 8));
+  const ratio = F.tensionKg / F.strength;
+  tension.value = F.tensionKg / 2.2;
 
-  if (f.over > 0.4) return endFight('snap');
-  if (f.snag > 1.5) return endFight('snag');
-  if (f.progress >= 1) return endFight('landed');
+  F.stamina = Math.max(0, F.stamina - dt * (0.03 + F.tensionKg * 0.05 + (F.running ? 0.03 : 0)) / (0.5 + f.kg * 0.5));
+  if (ratio > 0.92) F.over += dt;
+  else F.over = Math.max(0, F.over - dt * 1.5);
+  if (F.running && F.toCover && given > 0 && f.spot.snag > 0.3) F.snag += given * f.spot.snag * 0.14;
+  else F.snag = Math.max(0, F.snag - dt * 0.05);
+
+  // Sounds: the reel clicks as you wind, and sings as the fish takes line.
+  F.clickT -= dt;
+  if (F.clickT <= 0) {
+    if (given > 0) {
+      audio.click(1200 + save.drag * 160, 0.035);
+      F.clickT = clamp(0.006 / (given / dt + 0.01), 0.025, 0.12);
+      tackle.spool -= 0.6;
+    } else if (holding && pull <= drag) {
+      audio.click(1700, 0.025);
+      F.clickT = 0.08;
+      tackle.spool += 0.5;
+    } else F.clickT = 0.05;
+  }
+
+  // Depth, heading, jumps and splashes.
+  let y = F.running ? -0.35 : F.stamina < 0.3 ? -0.12 : -0.5;
+  if (F.jumpSoon && F.running && !F.jump && Math.random() < dt * 1.5) {
+    F.jump = { t: 0, dur: 0.75, h: 0.45 + f.kg * 0.12 };
+    F.jumpSoon = false;
+    fx.splash(f.pos.x, 0, f.pos.z, 30, 1.1);
+    audio.splash(0.7);
+  }
+  if (F.jump) {
+    F.jump.t += dt;
+    const k = F.jump.t / F.jump.dur;
+    y = Math.sin(Math.min(1, k) * Math.PI) * F.jump.h;
+    f.pitch = lerp(0.9, -0.9, k);
+    f.roll = Math.sin(k * 12) * 0.6;
+    if (k >= 1) {
+      F.jump = null;
+      f.roll = 0;
+      fx.splash(f.pos.x, 0, f.pos.z, 40, 1.2);
+      fx.ring(f.pos.x, f.pos.z, 1.5, 1.5);
+      audio.splash(1);
+    }
+  } else {
+    f.pitch = lerp(f.pitch || 0, 0, dt * 4);
+  }
+  f.pos.y = F.jump ? y : lerp(f.pos.y, y, dt * 2);
+  f.running = F.running;
+  f.faceTowards(f.pos.x + F.dir.x, f.pos.z + F.dir.z, 0.15);
+  if (!F.jump && f.pos.y > -0.25 && Math.random() < dt * (F.running ? 3 : 0.8)) {
+    fx.splash(f.pos.x, 0, f.pos.z, 6, 0.4);
+    fx.ring(f.pos.x, f.pos.z, 0.6, 1);
+  }
+
+  const fwd = new THREE.Vector3(-Math.sin(f.yaw), 0, -Math.cos(f.yaw));
+  F.mouth.copy(f.pos).addScaledVector(fwd, f.length / 200);
+  tackle.setFight(F.mouth, tension);
+
+  $('tension').style.width = `${clamp(ratio, 0, 1.1) / 1.1 * 100}%`;
+  $('lineout').textContent = `${Math.round(F.lineOut)} m`;
+  $('tension-bar').classList.toggle('danger', ratio > 0.8);
+
+  if (F.over > 0.3) return endFight('snap');
+  if (F.snag > 1) return endFight('snag');
+  if (F.slackT > 3) return endFight('slack');
+  if (dist < 3 && F.stamina < 0.35) return endFight('landed');
+  if (dist < 3 && !F.running) startRun();
 }
 
 function endFight(outcome) {
-  const f = fight;
+  const F = fight;
   fight = null;
   holding = false;
   $('fight').hidden = true;
-  const spot = f.d.spot;
-  scene.fly = null;
-  drift = null;
+  $('bottombar').hidden = false;
+  $('reel').classList.remove('on');
+  tension.value = 0;
+  const f = F.fish;
+  f.running = false;
   if (outcome === 'landed') {
-    state.fresh[spot.id] = Math.max(0, state.fresh[spot.id] - 0.3);
-    landed(f);
+    tackle.mode = 'hidden';
+    state.fresh[f.spot.id] = Math.max(0, state.fresh[f.spot.id] - 0.3);
+    landed(F);
     return;
   }
+  tackle.idle();
+  f.state = 'hold';
+  f.spook(F.foot.x, F.foot.z);
   audio.snap();
-  state.fresh[spot.id] = Math.max(0, state.fresh[spot.id] - 0.35);
+  state.fresh[f.spot.id] = Math.max(0, state.fresh[f.spot.id] - 0.35);
   const size = f.kg > 1.4 ? 'a big fish' : 'the fish';
-  const msg = outcome === 'snap'
-    ? `Snap! The ${state.rig.tippet} tippet couldn’t take the strain, and ${size} is gone. Ease off when it runs.`
-    : `The fish bored under a rock and the line went solid. Gone. In snaggy water, you need a tippet strong enough to hold it out of the rocks.`;
+  const msg = {
+    snap: `Snap! The ${state.rig.tippet} tippet couldn’t take the strain, and ${size} is gone. Loosen the drag, or stop reeling when it runs.`,
+    snag: 'The fish dived under a rock and the line went solid. Gone. In snaggy water, set the drag tighter (with a tippet strong enough to take it) so the fish can’t reach cover.',
+    slack: 'The line went slack and the hook fell out. Keep reeling when the fish swims towards you.',
+  }[outcome];
   log(msg);
-  toast(msg, 5500);
+  toast(msg, 6500);
   state.phase = 'idle';
-  advance(6);
+  advance(5);
 }
 
 // --- Landing & rewards ----------------------------------------------------------------
 
-function landed(f) {
-  const fish = f.fish;
-  const ev = f.d.res.ev;
-  const pts = catchPoints(fish, ev.match);
+function landed(F) {
+  const f = F.fish;
+  const ev = F.ev;
+  const fishRec = { length: f.length, weightG: f.weightG, species: f.species, trophy: f.length > f.spot.fish.max };
+  const pts = catchPoints(fishRec, ev.match);
   const stars = rigStars(ev.match);
-  const spot = f.d.spot;
+  const spot = f.spot;
   const rec = {
-    length: fish.length,
-    weightG: fish.weightG,
-    species: fish.species,
-    spotId: spot.id,
-    spotName: spot.name,
-    section: spot.section,
-    rig: { ...state.rig },
-    stars,
-    points: pts,
-    time: formatClock(state.minute),
-    day: save.days,
+    length: f.length, weightG: f.weightG, species: f.species,
+    spotId: spot.id, spotName: spot.name, section: spot.section,
+    rig: { ...state.rig }, stars, points: pts,
+    time: formatClock(state.minute), day: save.days,
   };
   save.points += pts;
   save.catches.unshift(rec);
   save.catches = save.catches.slice(0, 60);
-  if (!save.best || fish.length > save.best.length) save.best = rec;
+  if (!save.best || f.length > save.best.length) save.best = rec;
   state.today.push(rec);
-
   const newAch = checkAchievements(rec, ev);
   persist();
 
+  // Bring the fish to the net, close to the bank.
+  const foot = F.foot;
+  const dir = new THREE.Vector3(f.pos.x - foot.x, 0, f.pos.z - foot.z).normalize();
+  f.pos.set(foot.x + dir.x * 2.2, -0.08, foot.z + dir.z * 2.2);
+  f.state = 'landed';
+  state.landedFish = f;
+
   state.phase = 'card';
   audio.chime();
-  $('catch-eyebrow').textContent = `${fish.species === 'rainbow' ? 'Rainbow trout' : 'Brown trout'}${fish.trophy ? ' · a real trophy' : ''}`;
-  $('catch-len').textContent = fish.length;
-  $('catch-wt').textContent = fish.weightG.toLocaleString('en');
+  $('catch-eyebrow').textContent = `${f.species === 'rainbow' ? 'Rainbow trout' : 'Brown trout'}${fishRec.trophy ? ' · a real trophy' : ''}`;
+  $('catch-len').textContent = f.length;
+  $('catch-wt').textContent = f.weightG.toLocaleString('en');
   $('catch-pts').textContent = pts;
   $('catch-stars').textContent = '★'.repeat(stars) + '☆'.repeat(3 - stars);
-  $('catch-note').textContent = catchNote(stars, fish);
+  $('catch-note').textContent = catchNote(stars, fishRec);
   const ach = $('catch-ach');
   if (newAch.length) {
     ach.hidden = false;
     ach.textContent = `Achievement: ${newAch.map((a) => a.name).join(', ')}`;
   } else ach.hidden = true;
-  drawTrout($('fish-canvas'), fish);
-  $('catch').hidden = false;
-  log(`Landed a ${fish.length} cm ${fish.species} trout (+${pts} pts).`);
+  drawTrout($('fish-canvas'), fishRec);
+  setTimeout(() => ($('catch').hidden = false), 600);
+  log(`Landed a ${f.length} cm ${f.species} trout (+${pts} pts).`);
   updateHUD();
 }
 
@@ -620,13 +1003,17 @@ function catchNote(stars, fish) {
   return 'A lucky fish! This rig was badly matched to the water.';
 }
 
+const gotNow = [];
+function give(id) {
+  if (save.ach[id]) return;
+  save.ach[id] = save.days;
+  const a = ACHIEVEMENTS.find((x) => x.id === id);
+  gotNow.push(a);
+  if (state.phase !== 'card') toast(`Achievement: ${a.name}`, 4000);
+}
+
 function checkAchievements(rec, ev) {
-  const got = [];
-  const give = (id) => {
-    if (save.ach[id]) return;
-    save.ach[id] = rec.day;
-    got.push(ACHIEVEMENTS.find((a) => a.id === id));
-  };
+  gotNow.length = 0;
   give('first');
   if (rec.length >= 40) give('forty');
   if (rec.length >= 50) give('fifty');
@@ -637,125 +1024,27 @@ function checkAchievements(rec, ev) {
   const spot = state.data.river.spots.find((s) => s.id === rec.spotId);
   if (spot.type === 'flat' && ['12', '15'].includes(rec.rig.leader) && rec.rig.tippet === '6X') give('flat');
   if (spot.type === 'pocket' && rec.length >= 40) give('pocket');
-  const secs = new Set(state.today.map((c) => c.section));
-  if (secs.size >= 3) give('sections');
+  if (new Set(state.today.map((c) => c.section)).size >= 3) give('sections');
   if (dayPart(state.data.water, state.minute).id === 'dusk') give('dusk');
   if (state.today.length >= 10) give('ten');
-  return got;
+  return [...gotNow];
 }
 
-// --- Fish illustration ------------------------------------------------------------------
-
-function drawTrout(canvas, fish) {
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width, H = canvas.height;
-  ctx.clearRect(0, 0, W, H);
-  const brown = fish.species === 'brown';
-  const len = W * 0.82;
-  const x0 = (W - len) / 2, cy = H / 2 + 6;
-  const depth = len * (brown ? 0.21 : 0.22) * (fish.length > 50 ? 1.08 : 1);
-  const seed = fish.length * 13 + fish.weightG;
-  let s = seed;
-  const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-
-  const body = new Path2D();
-  body.moveTo(x0, cy);
-  body.bezierCurveTo(x0 + len * 0.1, cy - depth * 0.62, x0 + len * 0.45, cy - depth * 0.62, x0 + len * 0.82, cy - depth * 0.18);
-  body.lineTo(x0 + len * 0.86, cy - depth * 0.12);
-  body.lineTo(x0 + len * 0.86, cy + depth * 0.12);
-  body.lineTo(x0 + len * 0.82, cy + depth * 0.18);
-  body.bezierCurveTo(x0 + len * 0.45, cy + depth * 0.55, x0 + len * 0.12, cy + depth * 0.5, x0, cy);
-  body.closePath();
-
-  // Tail.
-  ctx.fillStyle = brown ? '#7a6436' : '#6f7a62';
-  ctx.beginPath();
-  ctx.moveTo(x0 + len * 0.85, cy);
-  ctx.quadraticCurveTo(x0 + len * 0.95, cy - depth * 0.55, x0 + len, cy - depth * 0.6);
-  ctx.quadraticCurveTo(x0 + len * 0.96, cy, x0 + len, cy + depth * 0.6);
-  ctx.quadraticCurveTo(x0 + len * 0.95, cy + depth * 0.55, x0 + len * 0.85, cy);
-  ctx.fill();
-  // Fins.
-  const fin = (x, y, w, h) => {
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.quadraticCurveTo(x + w * 0.3, y + h, x + w, y + h * 0.9);
-    ctx.quadraticCurveTo(x + w * 0.7, y, x, y);
-    ctx.fill();
-  };
-  ctx.fillStyle = brown ? '#8a7442' : '#7e8670';
-  fin(x0 + len * 0.36, cy - depth * 0.48, len * 0.12, -depth * 0.35);
-  fin(x0 + len * 0.66, cy - depth * 0.33, len * 0.05, -depth * 0.18);
-  ctx.fillStyle = brown ? '#c9a56a' : '#d9c8c0';
-  fin(x0 + len * 0.22, cy + depth * 0.32, len * 0.08, depth * 0.25);
-  fin(x0 + len * 0.45, cy + depth * 0.4, len * 0.07, depth * 0.22);
-  fin(x0 + len * 0.62, cy + depth * 0.3, len * 0.07, depth * 0.2);
-
-  // Body colours.
-  const g = ctx.createLinearGradient(0, cy - depth * 0.6, 0, cy + depth * 0.55);
-  if (brown) {
-    g.addColorStop(0, '#4d3f22');
-    g.addColorStop(0.35, '#9a7a3c');
-    g.addColorStop(0.65, '#d4b064');
-    g.addColorStop(1, '#f1e4b8');
-  } else {
-    g.addColorStop(0, '#3f5238');
-    g.addColorStop(0.35, '#8e9a80');
-    g.addColorStop(0.55, '#d7dad0');
-    g.addColorStop(1, '#f4f2ea');
+function release() {
+  $('catch').hidden = true;
+  const f = state.landedFish;
+  if (f) {
+    f.state = 'released';
+    f.t = 0;
+    f.wary = 1;
+    fx.splash(f.pos.x, 0, f.pos.z, 12, 0.5);
+    fx.ring(f.pos.x, f.pos.z, 0.8, 1.4);
+    audio.splash(0.3);
   }
-  ctx.fillStyle = g;
-  ctx.fill(body);
-  ctx.save();
-  ctx.clip(body);
-  if (!brown) {
-    // Pink lateral band.
-    const band = ctx.createLinearGradient(0, cy - depth * 0.12, 0, cy + depth * 0.18);
-    band.addColorStop(0, 'rgba(214,120,140,0)');
-    band.addColorStop(0.5, 'rgba(214,120,140,0.75)');
-    band.addColorStop(1, 'rgba(214,120,140,0)');
-    ctx.fillStyle = band;
-    ctx.fillRect(x0, cy - depth * 0.15, len, depth * 0.35);
-  }
-  // Spots.
-  const n = brown ? 70 : 110;
-  for (let i = 0; i < n; i++) {
-    const px = x0 + len * (0.12 + r() * 0.72);
-    const py = cy - depth * 0.5 + r() * depth * (brown ? 0.75 : 0.6);
-    if (brown) {
-      const red = r() < 0.28 && py > cy - depth * 0.15;
-      if (red) {
-        ctx.fillStyle = 'rgba(245,235,215,0.8)';
-        ctx.beginPath(); ctx.arc(px, py, 6, 0, 7); ctx.fill();
-        ctx.fillStyle = '#b8402f';
-      } else ctx.fillStyle = 'rgba(40,28,15,0.85)';
-      ctx.beginPath(); ctx.arc(px, py, red ? 3.6 : 2.4 + r() * 2.4, 0, 7); ctx.fill();
-    } else {
-      ctx.fillStyle = 'rgba(30,35,25,0.8)';
-      ctx.beginPath(); ctx.arc(px, py, 1.2 + r() * 1.6, 0, 7); ctx.fill();
-    }
-  }
-  // Soft highlight.
-  ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.beginPath();
-  ctx.ellipse(x0 + len * 0.4, cy - depth * 0.25, len * 0.3, depth * 0.08, -0.04, 0, 7);
-  ctx.fill();
-  ctx.restore();
-  // Gill and eye.
-  ctx.strokeStyle = 'rgba(40,30,20,0.4)';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.arc(x0 + len * 0.1, cy, depth * 0.33, -0.9, 0.9);
-  ctx.stroke();
-  ctx.fillStyle = '#f1e3b5';
-  ctx.beginPath(); ctx.arc(x0 + len * 0.045, cy - depth * 0.1, 5.5, 0, 7); ctx.fill();
-  ctx.fillStyle = '#1b1712';
-  ctx.beginPath(); ctx.arc(x0 + len * 0.046, cy - depth * 0.1, 3.4, 0, 7); ctx.fill();
-  ctx.strokeStyle = 'rgba(40,30,20,0.5)';
-  ctx.beginPath();
-  ctx.moveTo(x0 + 2, cy + 2);
-  ctx.lineTo(x0 + len * 0.06, cy + depth * 0.08);
-  ctx.stroke();
+  state.landedFish = null;
+  tackle.idle();
+  state.phase = 'idle';
+  advance(6);
 }
 
 // --- Logbook ----------------------------------------------------------------------------
@@ -770,6 +1059,7 @@ function openLogbook() {
     <div><b>${save.points.toLocaleString('en')}</b><span>points${next ? ` · ${next[0] - save.points} to ${next[1]}` : ''}</span></div>
     <div><b>${total}${total >= 60 ? '+' : ''}</b><span>fish landed</span></div>
     <div><b>${save.best ? save.best.length + ' cm' : '–'}</b><span>personal best${save.best ? ` (${save.best.species})` : ''}</span></div>
+    <div><b>${state.spottedToday}</b><span>fish spotted today</span></div>
     <div><b>${save.days}</b><span>days on the river</span></div>`;
   $('ach-grid').innerHTML = ACHIEVEMENTS.map(
     (a) => `<div class="ach ${save.ach[a.id] ? 'got' : ''}"><b>${save.ach[a.id] ? '★ ' : ''}${a.name}</b>${a.desc}</div>`,
@@ -778,7 +1068,7 @@ function openLogbook() {
     `<tr><td>Day ${c.day} ${c.time}</td><td>${c.length} cm</td><td>${c.species}</td><td>${c.spotName}</td><td>${c.rig.leader} ft · ${c.rig.tippet} · ${flyLabel(c.rig)}</td><td>${'★'.repeat(c.stars)}</td></tr>`,
   ).join('');
   $('catch-table').innerHTML = rows
-    ? `<tr><th>When</th><th>Length</th><th>Species</th><th>Spot</th><th>Rig</th><th>Rig</th></tr>${rows}`
+    ? `<tr><th>When</th><th>Length</th><th>Species</th><th>Spot</th><th>Rig</th><th>Rating</th></tr>${rows}`
     : '<tr><td class="muted">No fish yet. The river is waiting.</td></tr>';
   $('logbook').hidden = false;
 }
@@ -789,71 +1079,122 @@ function flyLabel(rig) {
   return `${t} ${s}`;
 }
 
-// --- Ambient life ------------------------------------------------------------------------
+// --- Living river --------------------------------------------------------------------
 
-function updateLife(dt) {
-  for (const r of scene.rises) r.age += dt;
-  for (const s of scene.splashes) s.age += dt;
-  scene.rises = scene.rises.filter((r) => r.age < r.life);
-  scene.splashes = scene.splashes.filter((s) => s.age < s.life);
-
+function updateFishLife(dt) {
   const hatch = activeHatch(state.day, state.minute);
   const part = dayPart(state.data.water, state.minute).id;
-  const rate = hatch ? 1.4 : part === 'dusk' || part === 'evening' ? 0.12 : 0.04;
-  if (Math.random() < dt * rate) {
-    const spots = state.data.river.spots.filter((s) =>
-      hatch ? (hatch.id === 'terrestrials' ? ['bank', 'seam', 'flat'] : ['flat', 'seam', 'bank', 'riffle']).includes(s.type) : s.type === 'flat' || s.type === 'seam');
-    const s = pick(spots);
-    const big = Math.random() < 0.2;
-    scene.rises.push({ x: s.x + rand(-28, 28), y: s.y + rand(-22, 22), age: 0, life: rand(1.8, 3), size: big ? 18 : 11, drift: s.section === 'flat' ? 0.5 : 2 });
-  }
+  const light = world.light ?? 1;
+  const cam = camera.position;
+  const ctx = {
+    time: world.time, minute: state.minute,
+    sun: state.day.weather.id === 'sunny' ? clamp(light - 0.3, 0, 1) : 0.1,
+  };
+  const visCtx = { clarity: state.day.clarity.id, polarized: save.polarized !== false, light: clamp(light * (state.day.weather.id === 'sunny' ? 1 : 0.8), 0.15, 1) };
+  for (const f of fishes) {
+    visCtx.distance = Math.hypot(f.pos.x - cam.x, f.pos.z - cam.z);
+    f.vis = f.computeVisibility(visCtx);
+    if (f.state !== 'landed') f.update(dt, ctx);
 
-  // The clock ticks slowly while you're idle: one minute every five seconds.
-  if (state.phase === 'idle') {
-    state.passive += dt;
-    if (state.passive >= 5) {
-      state.passive = 0;
-      advance(1);
+    // Natural rises: lots in a hatch, a few in the evening.
+    if (f.state !== 'hold') continue;
+    const influence = { flat: 1, seam: 0.9, bank: 0.8, pocket: 0.5, riffle: 0.5, run: 0.35 }[f.spot.type];
+    let rate = 0;
+    if (hatch) rate = (hatch.id === 'terrestrials' ? (f.spot.type === 'bank' || f.spot.type === 'seam' ? 0.9 : 0.25) : influence) / 9;
+    else if (part === 'evening' || part === 'dusk') rate = influence / 60;
+    rate *= f.length > 45 ? 0.6 : 1;
+    if (rate > 0 && Math.random() < dt * rate) {
+      f.rise((fish) => {
+        const big = fish.length >= 42;
+        fx.ring(fish.pos.x, fish.pos.z - 0.1, big ? 0.9 : 0.6, 2.4);
+        if (big || hatch?.id === 'caddis') fx.splash(fish.pos.x, 0, fish.pos.z, big ? 6 : 4, 0.35);
+        const dist = Math.hypot(fish.pos.x - cam.x, fish.pos.z - cam.z);
+        audio.sip(clamp(1.4 - dist / 25, 0.15, 1.2), clamp((fish.pos.x - cam.x) / 20, -0.8, 0.8));
+        recentRises.push({ fish, t: world.time });
+      });
     }
   }
+  while (recentRises.length && world.time - recentRises[0].t > 5) recentRises.shift();
 }
 
 // --- Events -----------------------------------------------------------------------------
 
 function bindEvents() {
-  const canvas = $('river');
-  window.addEventListener('resize', () => renderer.resize());
-  new ResizeObserver(() => renderer.resize()).observe($('stage'));
+  const canvas = $('view');
+  window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe($('stage'));
 
-  canvas.addEventListener('pointermove', (e) => {
-    const r = canvas.getBoundingClientRect();
-    const s = renderer.spotAt(e.clientX - r.left, e.clientY - r.top);
-    scene.hoverId = s ? s.id : null;
-    canvas.style.cursor = s && state.phase === 'idle' ? 'pointer' : 'default';
-  });
-  canvas.addEventListener('pointerleave', () => (scene.hoverId = null));
-  canvas.addEventListener('click', (e) => {
-    if (state.phase !== 'idle') return;
+  let down = null;
+  canvas.addEventListener('pointerdown', (e) => {
     audio.start();
-    const r = canvas.getBoundingClientRect();
-    const s = renderer.spotAt(e.clientX - r.left, e.clientY - r.top);
-    if (s) selectSpot(s);
+    if (state.phase === 'fight') {
+      holding = true;
+      $('reel').classList.add('on');
+      return;
+    }
+    down = { x: e.clientX, y: e.clientY, yaw, pitch, drag: false };
+    try { canvas.setPointerCapture(e.pointerId); } catch {}
   });
+  canvas.addEventListener('pointermove', (e) => {
+    if (down) {
+      const dx = e.clientX - down.x, dy = e.clientY - down.y;
+      if (!down.drag && Math.hypot(dx, dy) > 7) down.drag = true;
+      if (down.drag) {
+        dragging = true;
+        yaw = down.yaw + (dx * 0.0045) / zoom;
+        pitch = clamp(down.pitch + (dy * 0.003) / zoom, -0.85, 0.3);
+      }
+      return;
+    }
+    if (state.phase === 'idle' && e.pointerType === 'mouse') {
+      const p = waterPointAt(e.clientX, e.clientY);
+      const a = p && describeAim(p);
+      fx.setHover(a && a.ok ? p : null);
+      if (!state.aim) {
+        $('aim-label').textContent = a ? a.text : '';
+        $('aim-label').classList.toggle('show', !!a);
+      }
+    } else fx.setHover(null);
+  });
+  const up = (e) => {
+    holding = false;
+    $('reel').classList.remove('on');
+    if (!down) return;
+    const wasDrag = down.drag;
+    down = null;
+    dragging = false;
+    if (wasDrag) return;
+    if (state.phase === 'strike') return doStrike();
+    if (state.phase !== 'idle' && state.phase !== 'drift') return;
+    if (trySpot(e.clientX, e.clientY)) return;
+    if (state.phase === 'idle') setAimAt(e.clientX, e.clientY);
+  };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', () => { down = null; holding = false; });
+  window.addEventListener('pointerup', () => { holding = false; $('reel').classList.remove('on'); });
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    setZoom(zoomTarget * (1 - e.deltaY * 0.0015));
+  }, { passive: false });
+  $('btn-zoom').addEventListener('click', () => setZoom(zoomTarget > 1.05 ? 1 : 2.8));
+  canvas.addEventListener('dblclick', () => { if (state.phase === 'idle' && state.aim) cast(); });
 
-  // Reeling: hold anywhere on the river, or Space.
-  const stage = $('stage');
-  stage.addEventListener('pointerdown', (e) => {
-    if (state.phase === 'fight') { holding = true; e.preventDefault(); }
-  });
-  window.addEventListener('pointerup', () => (holding = false));
-  window.addEventListener('pointercancel', () => (holding = false));
   window.addEventListener('keydown', (e) => {
-    if (e.code !== 'Space' && e.code !== 'Enter') return;
-    if (state.phase === 'fight' && e.code === 'Space') { holding = true; e.preventDefault(); }
-    else if (state.phase === 'strike') { doStrike(); e.preventDefault(); }
-    else if (state.phase === 'idle' && e.code === 'Space' && document.activeElement === document.body) { cast(); e.preventDefault(); }
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (e.repeat) return;
+      if (state.phase === 'fight') { holding = true; $('reel').classList.add('on'); }
+      else if (state.phase === 'strike') doStrike();
+      else if (state.phase === 'idle' || state.phase === 'drift') cast();
+    }
+    if (state.phase === 'fight' && (e.code === 'ArrowUp' || e.code === 'KeyW')) { setDrag(1); e.preventDefault(); }
+    if (state.phase === 'fight' && (e.code === 'ArrowDown' || e.code === 'KeyS')) { setDrag(-1); e.preventDefault(); }
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') yaw += 0.06;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') yaw -= 0.06;
   });
-  window.addEventListener('keyup', (e) => { if (e.code === 'Space') holding = false; });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') { holding = false; $('reel').classList.remove('on'); }
+  });
 
   $('strike').addEventListener('pointerdown', (e) => { e.stopPropagation(); doStrike(); });
   $('btn-cast').addEventListener('click', cast);
@@ -863,22 +1204,24 @@ function bindEvents() {
     log('You sit on a warm stone and watch the water for a while.');
     advance(20);
   });
+  $('btn-flybox').addEventListener('click', () => { $('flybox').hidden = !$('flybox').hidden; });
+  $('flybox-close').addEventListener('click', () => ($('flybox').hidden = true));
+  const reel = $('reel');
+  reel.addEventListener('pointerdown', (e) => { e.preventDefault(); holding = true; reel.classList.add('on'); });
+  reel.addEventListener('pointerup', () => { holding = false; reel.classList.remove('on'); });
+  reel.addEventListener('pointerleave', () => { holding = false; reel.classList.remove('on'); });
+  reel.addEventListener('contextmenu', (e) => e.preventDefault());
+  $('drag-up').addEventListener('click', () => setDrag(1));
+  $('drag-down').addEventListener('click', () => setDrag(-1));
   $('btn-start').addEventListener('click', () => {
     $('intro').hidden = true;
     state.phase = 'idle';
     audio.start();
-    if (!state.selected) toast('Tap a ring on the river to choose where to fish.', 5000);
+    toast('Drag to look around. Tap the water where you want the fly to land, then Cast. Tap fish or rises you spot for points.', 7500);
     log(`Day ${save.days}: ${state.day.weather.label.toLowerCase()}, ${state.day.clarity.label.toLowerCase()} water.`);
     updateHUD();
   });
-  $('btn-release').addEventListener('click', () => {
-    $('catch').hidden = true;
-    const spot = state.selected;
-    scene.splashes.push({ x: spot.x, y: spot.y + 20, age: 0, life: 0.6, size: 0.4 });
-    audio.splash(0.3);
-    state.phase = 'idle';
-    advance(10);
-  });
+  $('btn-release').addEventListener('click', release);
   $('btn-newday').addEventListener('click', () => {
     $('dayend').hidden = true;
     newDay();
@@ -892,11 +1235,16 @@ function bindEvents() {
     persist();
     updateSoundButton();
   });
-  document.querySelectorAll('[data-close]').forEach((b) =>
-    b.addEventListener('click', () => (b.closest('.modal').hidden = true)));
-  for (const id of ['logbook', 'guide']) {
-    $(id).addEventListener('click', (e) => { if (e.target.id === id) $(id).hidden = true; });
-  }
+  $('btn-polar').addEventListener('click', () => {
+    save.polarized = save.polarized === false;
+    persist();
+    world.setPolarized(save.polarized);
+    $('btn-polar').classList.toggle('off', !save.polarized);
+    toast(save.polarized ? 'Polarized glasses on: the glare is gone and you can see into the water.' : 'Glasses off. The surface glare hides the fish.', 3500);
+  });
+  $('notes-toggle').addEventListener('click', () => $('notes-card').classList.toggle('collapsed'));
+  document.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => (b.closest('.modal').hidden = true)));
+  for (const id of ['logbook', 'guide']) $(id).addEventListener('click', (e) => { if (e.target.id === id) $(id).hidden = true; });
 }
 
 // --- Main loop --------------------------------------------------------------------------
@@ -905,14 +1253,64 @@ let last = performance.now();
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
-  if (walkAnim) walkAnim(dt);
+  if (walk) updateWalk(dt);
+  applyCamera(dt);
+
   if (state.phase === 'drift' && drift) updateDrift(dt);
   else if (state.phase === 'strike' && strike) updateStrike(dt);
-  else if (state.phase === 'fight' && fight) updateFight(dt);
-  updateLife(dt);
-  scene.hideSpots = state.phase === 'fight' || state.phase === 'drift' || state.phase === 'strike';
-  renderer.draw(dt, scene);
+  else if (state.phase === 'fight' && fight) {
+    updateFight(dt);
+    // Let the view follow the fish, unless you're looking around yourself.
+    if (fight && !dragging) {
+      const f = fight.fish.pos, c = camera.position;
+      let target = Math.atan2(-(f.x - c.x), -(f.z - c.z)) - 0.12;
+      while (target - yaw > Math.PI) target -= Math.PI * 2;
+      while (target - yaw < -Math.PI) target += Math.PI * 2;
+      yaw += (target - yaw) * Math.min(1, dt * 1.2);
+      pitch += (-0.12 - pitch) * Math.min(1, dt * 1.2);
+    }
+  }
+
+  if (['idle', 'drift', 'cast', 'fight', 'strike'].includes(state.phase)) {
+    state.passive += dt;
+    if (state.passive >= 5) {
+      state.passive = 0;
+      advance(1);
+    }
+  }
+
+  world.update(dt);
+  updateFishLife(dt);
+  tackle.update(dt, state.phase === 'fight' && fight ? fight.fish.pos : drift ? drift.pos : state.aim);
+  fx.update(dt, camera.position, {
+    hatch: !!activeHatch(state.day, state.minute),
+    rain: state.day.weather.id === 'drizzle',
+    mist: state.minute < 500 ? clamp((500 - state.minute) / 100, 0, 1) : 0,
+    minute: state.minute,
+  });
+  minimap.draw({ stand: state.stand, cam: camera.position, yaw, aim: state.aim, fish: fishes, walking: !!walk });
+  renderer.render(world.scene, camera);
+  window.__frames = (window.__frames || 0) + 1;
   requestAnimationFrame(loop);
 }
 
-boot();
+// Hooks for automated play-testing.
+window.__game = {
+  state, save,
+  get fishes() { return fishes; },
+  get fight() { return fight; },
+  get drift() { return drift; },
+  screenOf: (x, y, z) => screenOf(new THREE.Vector3(x, y, z)),
+  setView: (y, p) => { if (y !== undefined) yaw = y; if (p !== undefined) pitch = p; },
+  nudge: (dy, p) => { yaw += dy; pitch = p; },
+  debugCam: (x, y, z, yw, pt) => { camera.position.set(x, y, z); yaw = yw; pitch = pt; },
+  setMinute: (m) => { state.minute = m; updateHUD(); },
+  walkTo: (id) => walkTo(state.data.river.stands.find((s) => s.id === id)),
+  setHatch: (id) => { state.day.hatches = state.data.conditions.hatches.filter((h) => h.id === id); updateHUD(); },
+  setWeather: (id) => { state.day.weather = state.data.conditions.weather.find((w) => w.id === id); updateHUD(); },
+};
+
+boot().catch((e) => {
+  console.error(e);
+  $('loading').textContent = 'Something went wrong loading the river. Try reloading the page.';
+});

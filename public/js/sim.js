@@ -220,3 +220,37 @@ export const CALM_MISSES = [
 
 export const LEADER_ORDER = LEADERS;
 export const TIPPET_ORDER = TIPPETS;
+
+// --- 3D: individual fish -------------------------------------------------------
+
+// The fish that live in a lie today. Sizes follow the spot's range, with the
+// odd trophy in the best lies.
+export function populateSpot(spot, rng = Math.random) {
+  const n = 1 + (rng() < spot.holding ? 1 : 0) + (rng() < spot.holding * 0.45 ? 1 : 0);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const f = drawFish(spot, 0.85, 'morning', rng);
+    out.push({ length: f.length, species: f.species });
+  }
+  return out;
+}
+
+// How close the fly drifted to the fish's nose (metres) → 0..1.
+export function proximity(dist) {
+  return clamp(1 - (dist - 0.45) / 1.1, 0.25, 1);
+}
+
+// Chance that one particular fish takes a fly drifting past it. Bigger fish
+// are pickier: they need a better-matched rig.
+export function fishTakeChance(spot, rig, ctx, freshness, fish, dist) {
+  const base = takeChance(spot, rig, ctx, freshness);
+  const f = spot.fish;
+  const big = clamp((fish.length - f.min) / (f.max - f.min), 0, 1.6);
+  const picky = Math.pow(base.ev.match, 1.4 * big);
+  const wary = fish.wary ? 0.4 : 1;
+  return { p: clamp(base.p * 1.2 * picky * proximity(dist) * wary, 0, 0.85), ev: base.ev };
+}
+
+export function spotPoints(length) {
+  return 3 + Math.round(length / 10) + (length >= 45 ? 5 : 0);
+}
