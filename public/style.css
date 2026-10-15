@@ -487,3 +487,14 @@ kbd { background: rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 0 4px;
   .strike { bottom: 30%; }
   .sheet { padding: 18px 16px; }
 }
+
+/* Install as an app */
+.install-steps { margin-top: 0.6rem; }
+.install-steps h3 { margin: 0.4rem 0; }
+.install-steps ol { margin: 0.3rem 0 0.6rem; padding-left: 1.3rem; line-height: 1.7; }
+.share-glyph { display: inline-block; padding: 0 0.3em; border: 1px solid currentColor; border-radius: 4px; font-size: 0.8em; }
+@media (display-mode: standalone), (display-mode: fullscreen) {
+  .topbar { padding-top: max(env(safe-area-inset-top), 0.4rem); }
+}
+.link-btn { display: block; margin: 10px auto 0; background: none; border: 0; color: var(--accent, #2f6f8f); font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
+.link-btn[hidden] { display: none; }

@@ -6,6 +6,16 @@ Play it: https://fishing-game.thim-alvestad.workers.dev
 
 Pushes to `main` are deployed automatically by Cloudflare Workers Builds.
 
+## Install it as an app
+
+Riverbend is a Progressive Web App: install it and it gets its own icon, opens full screen and plays offline.
+
+- **iPhone / iPad:** open the game in Safari, tap **Share**, then **Add to Home Screen**.
+- **Android:** tap **📲** in the game (or Chrome's menu **⋮ → Install app**).
+- **Computer:** click the install icon in Chrome's or Edge's address bar.
+
+`public/manifest.webmanifest` describes the app, `public/sw.js` caches the game for offline play (network first, so you always get the newest version when online), and `public/icons/` holds the app icons. `npm test` checks that the service worker caches every file in `public/`, so add new files to its list.
+
 ## How it plays
 
 - **Look and walk.** Drag to look around; zoom with the mouse wheel or the 🔍 button. Tap a circle on the minimap to walk to another stand on the bank.
@@ -48,6 +58,7 @@ All the rules are plain JSON in `public/data/`, so you can tweak the game withou
 - `public/js/fx.js`: rings, splashes, insects, rain, mist, the aim marker.
 - `public/js/wildlife.js`: birds, dippers, swallows, flocks and the deer.
 - `public/js/insects.js`, `public/js/tutorial.js`: the "Check the water" report and the guided tutorial.
+- `public/js/install.js`: registers the service worker and runs the install button.
 - `public/js/main.js`: game flow and UI.
 - `public/vendor/`: three.js r169 (MIT), bundled so the game needs no CDN.
 

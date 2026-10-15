@@ -9,6 +9,7 @@ import { Wildlife } from './wildlife.js';
 import { Tutorial } from './tutorial.js';
 import { insectReport } from './insects.js';
 import { drawTrout } from './fishcard.js';
+import { setupInstall } from './install.js';
 import { RigUI, normalizeRig, rigInfo, simRig, rigSummary, newlyAffordable } from './rig.js';
 import {
   DAY_START, DAY_END, makeDay, dayPart, activeHatch, formatClock, catchPoints, rigStars, missHint,
@@ -1686,6 +1687,8 @@ window.__game = {
   setHatch: (id) => { state.day.hatches = state.data.conditions.hatches.filter((h) => h.id === id); updateHUD(); },
   setWeather: (id) => { state.day.weather = state.data.conditions.weather.find((w) => w.id === id); updateHUD(); },
 };
+
+setupInstall({ toast: (t) => toast(t) });
 
 boot().catch((e) => {
   console.error(e);
