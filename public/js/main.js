@@ -1822,7 +1822,7 @@ function bindEvents() {
     if ($('tut-check').checked && !tutorial.active) setTimeout(() => tutorial.start(), 600);
     state.phase = 'idle';
     audio.start();
-    toast('Drag to look around. Tap the water where you want the fly to land, then Cast. Put on the polarized glasses (🕶) to see into the water, and tap fish or rises you spot for points.', 8000);
+    toast('Drag to look around. Tap the water where you want the fly to land, then hold Cast to false cast and let go on the forward stroke. Put on the polarized glasses (🕶) to see into the water, and tap fish or rises you spot for points.', 8000);
     log(`Day ${save.days}: ${state.day.weather.label.toLowerCase()}, ${state.day.clarity.label.toLowerCase()} water.`);
     updateHUD();
   });
