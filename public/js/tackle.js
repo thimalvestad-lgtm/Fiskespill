@@ -350,12 +350,25 @@ export class Tackle {
 
   // --- Commands --------------------------------------------------------------
 
-  startCast(target, onLand) {
+  // Delivery. From a false cast (fromFalse) it starts on the forward stroke,
+  // with the fly unrolling from wherever it is in the air.
+  startCast(target, onLand, fromFalse = false) {
     this.mode = 'cast';
-    this.castT = 0;
+    this.castT = fromFalse ? 0.6 : 0;
+    this.castFrom = fromFalse ? this.flyPos.clone() : null;
     this.target = target.clone();
     this.onLand = onLand;
     this.landed = false;
+    this.sim = null;
+  }
+
+  // False casting: the rod swings back and forth and the line flies above
+  // the water, a little longer with each forward stroke. phase runs 0..1 per
+  // stroke pair: 0 is the forward stop, 0.5 the back stop.
+  startFalse() {
+    this.mode = 'false';
+    this.falsePhase = 0;
+    this.carry = 3;
     this.sim = null;
   }
 
@@ -380,7 +393,8 @@ export class Tackle {
       P.push(v);
       prev.push(v.clone());
     }
-    this.sim = { P, prev, seg: (total / (LINE_PTS - 1)) * 1.01, flowAt };
+    this.sim = { P, prev, seg: (total / (LINE_PTS - 1)) * 1.01, flowAt, rockSide: new Map() };
+    for (let k = 0; k < 6; k++) this.collideRocks(P, prev);
     this.mode = 'drift';
     this.drag = 0;
     this.flyPos.copy(P[LINE_PTS - 1]);
@@ -442,6 +456,13 @@ export class Tackle {
       else targetAngle = lerp(0.32, 0.22, clamp((t - 0.85) / 0.8, 0, 1));
       this.angle = targetAngle;
       whip = t < 0.45 ? 0.35 : t > 0.6 && t < 0.9 ? -0.6 : 0;
+    } else if (this.mode === 'false') {
+      const ph = this.falsePhase;
+      const x = (1 - Math.cos(ph * Math.PI * 2)) / 2;
+      targetAngle = lerp(0.5, 1.85, x);
+      this.angle = targetAngle;
+      whip = Math.sin(ph * Math.PI * 2) * (ph < 0.5 ? 0.35 : 0.6);
+      targetBend = 0.08 + Math.abs(Math.sin(ph * Math.PI * 2)) * 0.12;
     } else if (this.mode === 'drift') {
       // Rod tip low, pointing at the fly as it drifts, raised briefly to mend.
       targetAngle = this.mended > 0.45 ? 0.6 : -0.12;
@@ -452,7 +473,7 @@ export class Tackle {
       targetBend = clamp(0.15 + this.tension.value * 0.75, 0.15, 1.35) * (this.bowing ? 0.4 : 1);
     }
     if (this.mended > 0) this.mended -= dt;
-    if (this.mode !== 'cast') {
+    if (this.mode !== 'cast' && this.mode !== 'false') {
       const acc = (targetAngle - this.angle) * 60 - this.angleVel * 10;
       this.angleVel += acc * dt;
       this.angle += this.angleVel * dt;
@@ -550,6 +571,55 @@ export class Tackle {
     this.rodLineGeo.setPositions(L);
   }
 
+  // Boulders are solid. Line lying on the water is pushed around a rock's
+  // waterline, always to the same side once it has touched it, so the line
+  // wraps around the rock instead of cutting through; line in the air drapes
+  // over the top.
+  collideRocks(P, prev) {
+    const rocks = this.rocks;
+    if (!rocks) return;
+    const n = P.length;
+    const a = P[0], b = P[n - 1];
+    let ux = b.x - a.x, uz = b.z - a.z;
+    const ul = Math.hypot(ux, uz) || 1;
+    ux /= ul; uz /= ul;
+    const nx = -uz, nz = ux;
+    const sides = this.sim ? this.sim.rockSide : new Map();
+    for (const r of rocks) {
+      // Quick reject: is the rock anywhere near the line's chord?
+      const rx = r.x - a.x, rz = r.z - a.z;
+      const along = rx * ux + rz * uz, across = rx * nx + rz * nz;
+      if (along < -r.R - 1 || along > ul + r.R + 3 || Math.abs(across) > r.R + 4) continue;
+      for (let i = 1; i < n; i++) {
+        const p = P[i];
+        const dx = p.x - r.x, dz = p.z - r.z;
+        const d = Math.hypot(dx, dz);
+        if (d >= r.R) continue;
+        const h = r.cy + r.V * Math.sqrt(1 - (d / r.R) ** 2);
+        if (p.y >= h) continue;
+        if (p.y > WATER_Y + 0.08 && h - p.y < 0.4) {
+          // In the air over the rock: rest on its top.
+          prev[i].y += h + 0.01 - p.y;
+          p.y = h + 0.01;
+          continue;
+        }
+        if (d > r.rw + 0.04) continue;
+        let side = sides.get(r);
+        if (side === undefined) {
+          side = Math.sign(across) || 1;
+          sides.set(r, side);
+        }
+        let ox = (d > 1e-4 ? dx / d : -side * nx) - side * nx * 1.2;
+        let oz = (d > 1e-4 ? dz / d : -side * nz) - side * nz * 1.2;
+        const ol = Math.hypot(ox, oz) || 1;
+        ox /= ol; oz /= ol;
+        const tx = r.x + ox * (r.rw + 0.05), tz = r.z + oz * (r.rw + 0.05);
+        prev[i].x += tx - p.x; prev[i].z += tz - p.z;
+        p.x = tx; p.z = tz;
+      }
+    }
+  }
+
   // One step of the rope: gravity in the air, floating and drifting on the
   // water, and segment lengths that can bunch up but not stretch.
   stepSim(dt) {
@@ -634,6 +704,7 @@ export class Tackle {
         a.x -= dx * push; a.z -= dz * push;
         c.x += dx * push; c.z += dz * push;
       }
+      this.collideRocks(P, prev);
       if (this.mended > 0) fly.copy(before).lerp(fly, 0.15);
       dragSum += Math.hypot(fly.x - before.x, fly.z - before.z) / h;
     }
@@ -657,6 +728,19 @@ export class Tackle {
       for (let i = 0; i < LINE_PTS; i++) set(i, bezier(tip, ctrl, end, i / (LINE_PTS - 1), tmp));
       this.flyPos.copy(end);
       flyVisible = false;
+    } else if (this.mode === 'false') {
+      // The fly trails the rod a beat behind, so the loop unrolls back and
+      // then forward over the water.
+      const ph = this.falsePhase - 0.13;
+      const x = ease((1 - Math.cos(ph * Math.PI * 2)) / 2);
+      const c = this.carry;
+      const front = tip.clone().addScaledVector(this.aimDir, c * 0.92).setY(Math.max(1.1, tip.y - 0.5 - c * 0.02));
+      const back = tip.clone().addScaledVector(this.aimDir, -c * 0.85).setY(tip.y + 0.15);
+      const fly = front.lerp(back, x);
+      const loop = Math.abs(Math.sin(ph * Math.PI * 2));
+      const ctrl = tip.clone().lerp(fly, 0.5).add(new THREE.Vector3(0, 0.35 + 0.9 * loop, 0));
+      for (let i = 0; i < LINE_PTS; i++) set(i, bezier(tip, ctrl, fly, i / (LINE_PTS - 1), tmp));
+      this.flyPos.copy(fly);
     } else if (this.mode === 'cast') {
       const t = this.castT;
       const T = this.target;
@@ -673,7 +757,7 @@ export class Tackle {
         const over = tip.clone().addScaledVector(this.aimDir, dist * 0.35).add(new THREE.Vector3(0, 2.6, 0));
         const above = T.clone().add(new THREE.Vector3(0, 0.5, 0));
         const e = ease(k);
-        fly = bezier(back, over, above, e, new THREE.Vector3());
+        fly = bezier(this.castFrom || back, over, above, e, new THREE.Vector3());
         ctrl = tip.clone().lerp(fly, 0.55).add(new THREE.Vector3(0, 0.9 * (1 - e) + 0.25, 0));
       } else {
         // Settling onto the water, line lying out straight towards the fly.

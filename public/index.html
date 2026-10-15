@@ -56,6 +56,18 @@
 
     <button class="zoom-btn" id="btn-zoom" title="Look closer (mouse wheel zooms too)" aria-label="Look closer">&#128269;</button>
     <div class="aim-label" id="aim-label"></div>
+    <div class="castmeter" id="castmeter" hidden>
+      <div class="cm-row">
+        <span class="cm-lbl">Line out</span>
+        <div class="cm-bar"><div class="cm-fill" id="cm-line"></div><div class="cm-target" id="cm-target"></div></div>
+        <span class="cm-txt" id="cm-line-txt"></span>
+      </div>
+      <div class="cm-row">
+        <span class="cm-lbl">Rhythm</span>
+        <div class="cm-bar rhythm"><span class="cm-back">back</span><div class="cm-zone"></div><div class="cm-dot" id="cm-dot"></div><span class="cm-fwd">forward</span></div>
+        <span class="cm-txt" id="cm-rhythm-txt"></span>
+      </div>
+    </div>
     <div class="toast" id="toast" aria-live="polite"></div>
     <div class="floaters" id="floaters"></div>
     <div class="tutorial" id="tutorial" hidden>

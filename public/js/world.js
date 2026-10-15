@@ -56,6 +56,16 @@ export class World {
     this.scene = new THREE.Scene();
     this.time = 0;
     this.rocks = this.river.rocks.map((r) => ({ ...this.m2w(r.x, r.y), r: r.r * 0.1 * 1.15, mr: r }));
+    // Each boulder as a solid, matching its mesh: a squashed dome (horizontal
+    // radius R, height V) whose centre sits a little below the surface, so it
+    // breaks the water in a circle of radius rw and rises to a top.
+    for (const r of this.rocks) {
+      r.cy = -r.r * (r.r > 1 ? 0.35 : 0.45) + 0.05;
+      r.R = r.r * 1.07;
+      r.V = r.r * 0.8;
+      r.rw = r.R * Math.sqrt(Math.max(0.01, 1 - (r.cy / r.V) ** 2));
+      r.top = r.cy + r.V;
+    }
     this.spots = this.river.spots.map((s) => ({ ...s, w: this.m2w(s.x, s.y), depthM: parseFloat(s.depth) }));
     this.eddy = this.spots.find((s) => s.id === 'foam-eddy');
     this.undercut = this.spots.find((s) => s.type === 'bank');
@@ -133,6 +143,22 @@ export class World {
 
   inWater(x, z) {
     return this.heightAt(x, z) < -0.04;
+  }
+
+  // The boulder at a point on the water (within pad of its waterline), if any.
+  rockAt(x, z, pad = 0) {
+    for (const r of this.rocks) if (Math.hypot(x - r.x, z - r.z) < r.rw + pad) return r;
+    return null;
+  }
+
+  // Height of the rock surface above a point (or -Infinity off the rocks).
+  rockHeight(x, z) {
+    let h = -Infinity;
+    for (const r of this.rocks) {
+      const d = Math.hypot(x - r.x, z - r.z);
+      if (d < r.R) h = Math.max(h, r.cy + r.V * Math.sqrt(1 - (d / r.R) ** 2));
+    }
+    return h;
   }
 
   // Current at a point: a direction along the channel and a speed in m/s.
@@ -429,6 +455,7 @@ export class World {
       group.add(m);
     };
     this.rocks.forEach((r, i) => make(r.x, r.z, r.r, i * 1.7, r.r > 1 ? 0.35 : 0.45));
+    this.rockMeshes = group.children.slice(0, this.rocks.length);
     // Scattered stones on the bed and the gravel shore.
     let s = 11;
     const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);

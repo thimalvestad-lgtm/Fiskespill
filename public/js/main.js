@@ -111,6 +111,7 @@ async function boot() {
   fx = new Effects(world.scene);
   fx.setWorld(world);
   tackle = new Tackle(world.scene, camera);
+  tackle.rocks = world.rocks;
   tackle.setFly(rigInfo(state.rig, gear).fly);
   tackle.setGear(rigInfo(state.rig, gear));
   audio = new Ambience();
@@ -329,8 +330,8 @@ function updateHUD() {
   $('points').textContent = `${save.points.toLocaleString('en')} pts`;
   $('notes').textContent = riverNotes();
   const idle = state.phase === 'idle';
-  $('btn-cast').disabled = !(idle && state.aim) && state.phase !== 'drift';
-  $('btn-cast').textContent = state.phase === 'drift' ? 'Pick up' : 'Cast';
+  $('btn-cast').disabled = !(idle && state.aim) && state.phase !== 'drift' && state.phase !== 'falsecast';
+  $('btn-cast').textContent = state.phase === 'drift' ? 'Pick up' : state.phase === 'falsecast' ? 'Let go!' : 'Cast';
   $('btn-rest').disabled = !idle && state.phase !== 'drift';
   $('btn-rest').textContent = state.phase === 'drift' ? 'Mend' : 'Sit & watch';
   const rainNow = rainAt(state.day, state.minute);
@@ -451,6 +452,7 @@ function lieAt(p) {
 
 function describeAim(p) {
   const dist = Math.hypot(p.x - camera.position.x, p.z - camera.position.z);
+  if (world.rockAt(p.x, p.z, 0.05)) return { ok: false, text: 'That’s a rock: the fly would bounce off it. Aim beside it.' };
   if (!world.inWater(p.x, p.z)) return { ok: false, text: 'That’s dry land.' };
   const maxCast = gearNow().rod.maxCast;
   if (dist > maxCast) return { ok: false, text: `Too far for this rod (${Math.round(dist)} m, max ${maxCast} m).` };
@@ -516,7 +518,13 @@ function setAimAt(px, py) {
 
 // --- Casting ------------------------------------------------------------------------------
 
-function cast() {
+// Casting is done by hand: hold Cast to false cast. The rod swings back and
+// forth and each forward stroke shoots out more line. Let go on a forward
+// stroke, when the line out matches the distance to the marker. Good timing
+// makes a tight, accurate loop; a sloppy release opens the loop up.
+let falseCast = null;
+
+function beginCast() {
   if (state.phase === 'drift') return pickUp();
   if (state.phase !== 'idle' || !state.aim) return;
   audio.start();
@@ -525,24 +533,132 @@ function cast() {
     state.rigChanged = false;
     advance(2);
   }
-  state.phase = 'cast';
-  const target = state.aim.clone();
-  // A little natural inaccuracy, more at long range.
-  const dist = Math.hypot(target.x - camera.position.x, target.z - camera.position.z);
-  const err = (0.15 + dist * 0.02) * gearNow().rod.accuracy;
-  target.x += rand(-err, err);
-  target.z += rand(-err, err);
-  if (!world.inWater(target.x, target.z)) target.copy(state.aim);
-  target.y = 0;
-  tackle.startCast(target, () => land(target));
-  audio.cast();
-  setTimeout(() => audio.cast(), 650);
+  const dist = Math.hypot(state.aim.x - camera.position.x, state.aim.z - camera.position.z);
+  const g = gearNow();
+  falseCast = {
+    t: 0, phase: 0, strokes: 0, dist,
+    carry: Math.min(dist * 0.45, 5),
+    // A fast-action rod and a line that turns over well shoot more per stroke.
+    shoot: 2.2 + g.rod.maxCast * 0.05 * g.line.turnover,
+  };
+  state.phase = 'falsecast';
+  tackle.startFalse();
+  tackle.carry = falseCast.carry;
+  $('castmeter').hidden = false;
   $('aim-label').classList.remove('show');
   fx.setHover(null);
   updateHUD();
 }
 
+// Timing quality for a release at this point in the stroke: best just before
+// the forward stop (phase ~0.93), poor on the back cast.
+function releaseQuality(ph) {
+  let d = ph - 0.93;
+  if (d > 0.5) d -= 1;
+  if (d < -0.5) d += 1;
+  return clamp(1 - Math.abs(d) / 0.2, 0, 1);
+}
+
+function updateFalseCast(dt) {
+  const F = falseCast;
+  // Longer line needs a slower rhythm to let the loop unroll.
+  const period = 1.15 + F.carry * 0.035;
+  const before = F.phase;
+  F.phase = (F.phase + dt / period) % 1;
+  F.t += dt;
+  if (before < 0.5 && F.phase >= 0.5) audio.cast();
+  if (F.phase < before) { audio.cast(); F.strokes++; }
+  // Line slips out through your fingers on each forward stroke.
+  if (F.phase >= 0.5) F.carry = Math.min(gearNow().rod.maxCast + 2, F.carry + (F.shoot * dt) / (period * 0.5));
+  tackle.falsePhase = F.phase;
+  tackle.carry = F.carry;
+  // The meter: line out against the distance, and the rhythm.
+  const max = Math.max(F.dist * 1.4, F.carry + 1);
+  $('cm-line').style.width = `${(tackle.carry / max) * 100}%`;
+  $('cm-target').style.left = `${(F.dist / max) * 100}%`;
+  const ok = F.carry > F.dist - 0.8 && F.carry < F.dist + Math.max(1.5, F.dist * 0.15);
+  $('cm-line').classList.toggle('ok', ok);
+  $('cm-line-txt').textContent = `${tackle.carry.toFixed(1)} m of ${F.dist.toFixed(1)} m`;
+  const x = (1 - Math.cos(F.phase * Math.PI * 2)) / 2; // 0 forward, 1 back
+  $('cm-dot').style.left = `${(1 - x) * 100}%`;
+  const q = releaseQuality(F.phase);
+  $('cm-dot').classList.toggle('good', q > 0.5);
+  $('cm-rhythm-txt').textContent = F.phase < 0.5 ? 'Back cast...' : q > 0.5 ? 'Forward: let go now!' : 'Forward...';
+  if (F.t > 14) releaseCast();
+}
+
+function releaseCast() {
+  if (state.phase !== 'falsecast' || !falseCast) return;
+  const F = falseCast;
+  falseCast = null;
+  $('castmeter').hidden = true;
+  const q = releaseQuality(F.phase);
+  const g = gearNow();
+  const aim = state.aim.clone();
+  const from = new THREE.Vector3(camera.position.x, 0, camera.position.z);
+  const dir = aim.clone().sub(from).setY(0).normalize();
+  // Line out decides where the fly turns over: short of the marker, on it,
+  // or past it. A little line shoots on the delivery.
+  const carry = F.carry;
+  let reach = F.dist;
+  let note = null;
+  if (carry < F.dist - 0.8) { reach = carry; note = 'short'; }
+  else if (carry > F.dist + Math.max(1.5, F.dist * 0.15)) { reach = F.dist + (carry - F.dist) * 0.6; note = 'long'; }
+  const target = from.clone().addScaledVector(dir, reach);
+  // Timing sets the loop: a crisp stop lands the fly where you look.
+  const err = (0.12 + F.dist * 0.016) * g.rod.accuracy * (0.7 + (1 - q) * 2.6);
+  target.x += rand(-err, err);
+  target.z += rand(-err, err);
+  if (!world.inWater(target.x, target.z) && !world.rockAt(target.x, target.z)) {
+    // Never into the trees: the cast falls on the edge of the water instead.
+    target.copy(from).addScaledVector(dir, Math.min(reach, F.dist));
+  }
+  target.y = 0;
+  const rock = world.rockAt(target.x, target.z, 0.04);
+  if (rock) target.y = Math.max(0.02, world.rockHeight(target.x, target.z));
+  state.cast = { q, note, rock };
+  state.phase = 'cast';
+  tackle.startCast(target, () => (rock ? hitRock(target, rock) : land(target)), true);
+  audio.cast();
+  updateHUD();
+}
+
+// Older callers (the tutorial, keyboard, tests) cast in one go.
+function cast() {
+  if (state.phase === 'falsecast') return releaseCast();
+  beginCast();
+}
+
+// The fly smacked into a boulder: the cast is spoiled.
+function hitRock(p, rock) {
+  audio.click(520, 0.06);
+  setTimeout(() => audio.click(380, 0.04), 90);
+  fx.splash(p.x, p.y, p.z, 6, 0.25);
+  // The clatter can put down fish lying close to the rock.
+  for (const f of fishes) {
+    if (f.hidden || f.state !== 'hold') continue;
+    if (Math.hypot(f.pos.x - rock.x, f.pos.z - rock.z) < rock.rw + 1.5 && Math.random() < 0.35) f.spook(p.x, p.z);
+  }
+  tackle.idle();
+  state.phase = 'idle';
+  state.cast = null;
+  const msg = 'Tick! The fly hit the rock and the cast fell apart. Aim a little off the boulder, and let go on the forward stroke for an accurate loop.';
+  log(msg);
+  toast(msg, 5000);
+  advance(1);
+  updateHUD();
+}
+
 function land(p) {
+  const c = state.cast;
+  state.cast = null;
+  if (c) {
+    const msg = c.note === 'short' ? 'The cast fell short. Keep false casting until the line out reaches the marker.'
+      : c.note === 'long' ? 'Too much line: the fly sailed past the marker.'
+      : c.q > 0.75 ? 'A tight loop, and the fly turns over right on target.'
+      : c.q < 0.3 ? 'You let go too early or late. The loop opened up and the fly went wide.' : null;
+    if (msg && (c.note || c.q > 0.75 || Math.random() < 0.6)) toast(msg, 2600);
+  }
   audio.plop();
   const r = curRig();
   fx.ring(p.x, p.z, r.size === 'large' ? 0.5 : 0.3, 1.2);
@@ -969,7 +1085,7 @@ function buildTutorial() {
       begin: () => { tut.rig = false; }, check: () => tut.rig },
     { title: 'Aim', text: 'Trout hold where the current brings them food: seams between fast and slow water, behind rocks, at the head of pools. Tap the water <b>a metre or two upstream</b> of such a spot. The label tells you what kind of water it is.',
       begin: () => { state.aim = null; fx.setAim(null); }, check: () => !!state.aim },
-    { title: 'Cast', text: 'Press <b>Cast</b> (or Space) and watch the line unroll and the fly land.', check: () => state.phase === 'drift' },
+    { title: 'Cast', text: '<b>Hold Cast</b> (or Space) to false cast: the rod swings back and forth and more line goes out with each stroke. Let go when the line out reaches the marker and the dot is in the green, on the forward stroke. Don\u2019t hit the rocks!', check: () => state.phase === 'drift' },
     { title: 'Follow the drift', text: 'Watch your fly drift with the current. If the line starts pulling the fly (a little V-wake behind it), press <b>Mend</b> (or M) to flip the line upstream.',
       begin: () => { tut.mended = false; tut.drifted = false; }, check: () => tut.mended || tut.drifted },
     { title: 'When a fish takes', text: 'The dry fly disappears in a swirl, or the orange indicator dips. Hit <b>Strike!</b> quickly. Then tap <b>Reel</b> to bring the fish in, and set the <b>drag</b> a bit below what your tippet can take. If you see <b>\u26A0 JUMP</b>, hold <b>Bow</b> until the fish is back in the water.' },
@@ -1050,7 +1166,13 @@ function updateFight(dt) {
 
   // Move the fish, staying in the water.
   const next = f.pos.clone().addScaledVector(F.dir, F.speed * dt);
-  if (world.heightAt(next.x, next.z) > -0.25) {
+  const rk = world.rockAt(next.x, next.z, 0.15);
+  if (rk) {
+    // Slide around the boulder.
+    const ox = next.x - rk.x, oz = next.z - rk.z, ol = Math.hypot(ox, oz) || 1;
+    f.pos.x = rk.x + (ox / ol) * (rk.rw + 0.16);
+    f.pos.z = rk.z + (oz / ol) * (rk.rw + 0.16);
+  } else if (world.heightAt(next.x, next.z) > -0.25) {
     const { cx } = world.channel(f.pos.z);
     F.dir.set(cx - f.pos.x, 0, rand(-0.5, 0.5)).normalize();
   } else {
@@ -1626,7 +1748,6 @@ function bindEvents() {
     setZoom(zoomTarget * (1 - e.deltaY * 0.0015));
   }, { passive: false });
   $('btn-zoom').addEventListener('click', () => setZoom(zoomTarget > 1.05 ? 1 : 2.8));
-  canvas.addEventListener('dblclick', () => { if (state.phase === 'idle' && state.aim) cast(); });
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space') {
@@ -1634,7 +1755,7 @@ function bindEvents() {
       if (e.repeat) return;
       if (state.phase === 'fight') { crank(); holding = true; if (fight) fight.autoCrankT = 0.35; $('reel').classList.add('on'); }
       else if (state.phase === 'strike') doStrike();
-      else if (state.phase === 'idle' || state.phase === 'drift') cast();
+      else if (state.phase === 'idle' || state.phase === 'drift') beginCast();
     }
     if (state.phase === 'fight' && (e.code === 'ArrowUp' || e.code === 'KeyW')) { setDrag(0.5); e.preventDefault(); }
     if (state.phase === 'fight' && (e.code === 'ArrowDown' || e.code === 'KeyS')) { setDrag(-0.5); e.preventDefault(); }
@@ -1650,13 +1771,18 @@ function bindEvents() {
     }
   });
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'Space') { holding = false; $('reel').classList.remove('on'); }
+    if (e.code === 'Space') { holding = false; $('reel').classList.remove('on'); releaseCast(); }
     if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') setBow(false);
     if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) steerKeys = 0;
   });
 
   $('strike').addEventListener('pointerdown', (e) => { e.stopPropagation(); doStrike(); });
-  $('btn-cast').addEventListener('click', cast);
+  // Hold Cast to false cast; let go to deliver.
+  $('btn-cast').addEventListener('pointerdown', (e) => { e.preventDefault(); beginCast(); });
+  $('btn-cast').addEventListener('contextmenu', (e) => e.preventDefault());
+  window.addEventListener('pointerup', () => releaseCast());
+  window.addEventListener('pointercancel', () => releaseCast());
+  window.addEventListener('blur', () => releaseCast());
   $('btn-rest').addEventListener('click', () => {
     if (state.phase === 'drift') return mend();
     if (state.phase !== 'idle') return;
@@ -1755,6 +1881,7 @@ function step(dt) {
     }
   }
   else if (state.phase === 'strike' && strike) updateStrike(dt);
+  else if (state.phase === 'falsecast' && falseCast) updateFalseCast(dt);
   else if (state.phase === 'fight' && fight) {
     updateFight(dt);
     // Let the view follow the fish, unless you're looking around yourself.
@@ -1768,7 +1895,7 @@ function step(dt) {
     }
   }
 
-  if (['idle', 'drift', 'cast', 'fight', 'strike'].includes(state.phase)) {
+  if (['idle', 'drift', 'cast', 'falsecast', 'fight', 'strike'].includes(state.phase)) {
     state.passive += dt;
     if (state.passive >= 5) {
       state.passive = 0;
@@ -1781,7 +1908,7 @@ function step(dt) {
   tutorial.update();
   if (tutorial.active) $('tutorial').classList.toggle('top', !$('flybox').hidden || !$('leaderbox').hidden);
   wildlife.update(dt, camera, { part: dayPart(state.data.water, state.minute).id, rain: rainAt(state.day, state.minute) });
-  fx.aim.visible = !!state.aim && state.phase === 'idle';
+  fx.aim.visible = !!state.aim && (state.phase === 'idle' || state.phase === 'falsecast');
   tackle.update(dt, state.phase === 'fight' && fight ? fight.fish.pos : drift ? drift.pos : state.aim);
   fx.update(dt, camera.position, {
     hatch: !!activeHatch(state.day, state.minute),
@@ -1798,6 +1925,10 @@ window.__game = {
   get fishes() { return fishes; },
   get fight() { return fight; },
   get drift() { return drift; },
+  aimAt: (x, z) => { state.aim = new THREE.Vector3(x, 0, z); fx.setAim(state.aim); updateHUD(); return describeAim(state.aim); },
+  beginCast: () => beginCast(),
+  releaseCast: () => releaseCast(),
+  get falseCast() { return falseCast; },
   hook: (i) => { const f = fishes[i]; state.phase = 'drift'; startFight({ ev: { match: 0.7 } }, f); },
   screenOf: (x, y, z) => screenOf(new THREE.Vector3(x, y, z)),
   setView: (y, p) => { if (y !== undefined) yaw = y; if (p !== undefined) pitch = p; },
