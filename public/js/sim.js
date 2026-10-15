@@ -29,7 +29,27 @@ export function makeDay(conditions, rng = Math.random) {
   }));
   const clarity = pickWeighted(clarityList, rng);
   const hatches = conditions.hatches.filter((h) => rng() < (h.chance[weather.id] ?? 0));
-  return { weather, clarity, hatches };
+  // Passing showers: more likely on grey days.
+  const showers = [];
+  const chance = { sunny: 0.3, overcast: 0.65, drizzle: 0.35 }[weather.id] ?? 0.3;
+  if (rng() < chance) {
+    const n = rng() < 0.35 ? 2 : 1;
+    for (let i = 0; i < n; i++) {
+      const from = Math.round(480 + rng() * 660);
+      showers.push({ from, to: from + Math.round(25 + rng() * 45), strength: 0.6 + rng() * 0.4 });
+    }
+  }
+  return { weather, clarity, hatches, showers };
+}
+
+// How hard it's raining (0..1) at a given minute.
+export function rainAt(day, minute) {
+  let r = day.weather.id === 'drizzle' ? 0.45 : 0;
+  for (const sh of day.showers || []) {
+    const ramp = Math.min(1, (minute - sh.from) / 12, (sh.to - minute) / 12);
+    if (ramp > 0) r = Math.max(r, sh.strength * ramp);
+  }
+  return r;
 }
 
 export function dayPart(water, minute) {
@@ -103,6 +123,13 @@ export function evaluateRig(spot, rig, ctx) {
   } else if (rig.fly === 'dry') {
     fly = base * (day.weather.id === 'sunny' && (part === 'midday' || part === 'afternoon') ? 0.7 : 0.85);
   }
+  // Some patterns shine in the right water: attractors when nothing hatches,
+  // emergers for picky fish during a hatch.
+  const b = rig.bonus;
+  if (b && (!b.waters || b.waters.includes(spot.type))) {
+    if (b.noHatch && !hatch) fly *= b.noHatch;
+    if (b.hatch && hatch) fly *= b.hatch;
+  }
 
   // Fly size: match the hatch when fish are rising, otherwise suit the water.
   let size;
@@ -164,7 +191,7 @@ function leaderScore(table, feet) {
 // length (ft). Light flies get swept up by fast water; heavy ones get down.
 export function effectiveDepth(rig, speed) {
   const ft = rig.fly === 'nymph' ? rig.indicatorFt : rig.dropperFt;
-  const sink = { small: 0.5, medium: 0.72, large: 0.95 }[rig.size] * (rig.fly === 'drydropper' ? 0.9 : 1);
+  const sink = Math.min(1, { small: 0.5, medium: 0.72, large: 0.95 }[rig.size] * (rig.fly === 'drydropper' ? 0.9 : 1) * (rig.sinkMul || 1));
   const fast = clamp(speed, 0, 1.3) / 1.3;
   return ft * 0.3048 * lerp(1, sink, fast) * 0.92;
 }
@@ -174,7 +201,7 @@ export function spotActivity(spot, ctx) {
   const wt = water.types[spot.type];
   const part = dayPart(water, minute).id;
   const hatch = activeHatch(day, minute);
-  let a = spot.holding * wt.activity[part] * day.weather.activity;
+  let a = spot.holding * wt.activity[part] * day.weather.activity * (1 + 0.2 * rainAt(day, minute));
   if (hatch) a *= 1 + 0.35 * HATCH_INFLUENCE[spot.type];
   if (spot.type === 'flat' && day.weather.id === 'sunny' && (part === 'midday' || part === 'afternoon')) a *= 0.85;
   return clamp(a, 0, 1.2);
@@ -183,7 +210,7 @@ export function spotActivity(spot, ctx) {
 export function takeChance(spot, rig, ctx, freshness = 1) {
   const ev = evaluateRig(spot, rig, ctx);
   const act = spotActivity(spot, ctx);
-  const p = act * Math.pow(ev.match, 1.3) * 0.6 * (0.2 + 0.8 * freshness);
+  const p = act * Math.pow(ev.match, 1.25) * 0.7 * (0.2 + 0.8 * freshness);
   return { p: clamp(p, 0.01, 0.8), ev, activity: act };
 }
 
@@ -285,7 +312,7 @@ export function populateSpot(spot, rng = Math.random) {
 
 // How close the fly drifted to the fish's nose (metres) → 0..1.
 export function proximity(dist) {
-  return clamp(1 - (dist - 0.45) / 1.1, 0.25, 1);
+  return clamp(1 - (dist - 0.6) / 1.2, 0.25, 1);
 }
 
 // Chance that one particular fish takes a fly drifting past it. Bigger fish
@@ -294,7 +321,7 @@ export function fishTakeChance(spot, rig, ctx, freshness, fish, dist) {
   const base = takeChance(spot, rig, ctx, freshness);
   const f = spot.fish;
   const big = clamp((fish.length - f.min) / (f.max - f.min), 0, 1.6);
-  const picky = Math.pow(base.ev.match, 1.9 * big);
+  const picky = Math.pow(base.ev.match, 1.6 * big);
   const wary = fish.wary ? 0.4 : 1;
   return { p: clamp(base.p * picky * proximity(dist) * wary, 0, 0.75), ev: base.ev };
 }

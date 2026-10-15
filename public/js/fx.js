@@ -293,16 +293,19 @@ export class Effects {
     }
 
     // Rain.
-    this.rainMat.opacity += ((rain ? 0.35 : 0) - this.rainMat.opacity) * Math.min(1, dt);
+    const rainK = typeof rain === 'number' ? rain : rain ? 0.45 : 0;
+    this.rainMat.opacity += (rainK * 0.55 - this.rainMat.opacity) * Math.min(1, dt);
+    const activeDrops = Math.round(this.rainN * Math.min(1, rainK * 1.3));
     this.rain.visible = this.rainMat.opacity > 0.01;
     if (this.rain.visible) {
       const rp = this.rainGeo.attributes.position;
       for (let i = 0; i < this.rainN; i++) {
         const d = this.rainDrops[i];
+        if (i >= activeDrops) { rp.setXYZ(i * 2, 0, -50, 0); rp.setXYZ(i * 2 + 1, 0, -50, 0); continue; }
         d.y -= dt * 9;
         if (d.y < 0) {
           d.set((Math.random() - 0.5) * 40, 12 + Math.random() * 3, (Math.random() - 0.5) * 40);
-          if (Math.random() < 0.15) this.ring(camPos.x + d.x * 0.6, camPos.z + d.z * 0.6, 0.12, 0.5);
+          if (Math.random() < 0.15 + rainK * 0.2) this.ring(camPos.x + d.x * 0.6, camPos.z + d.z * 0.6, 0.12, 0.5);
         }
         rp.setXYZ(i * 2, camPos.x + d.x, d.y, camPos.z + d.z);
         rp.setXYZ(i * 2 + 1, camPos.x + d.x - 0.03, d.y + 0.35, camPos.z + d.z);

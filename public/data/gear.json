@@ -1,41 +1,435 @@
 {
-  "_about": "Tackle. A rig is a tapered leader, an optional tippet section, and a fly. Nymphs hang below an indicator; dry droppers hang a nymph below a dry fly. Lengths are in feet.",
+  "_about": "Tackle. A rig is a rod, a reel, a fly line, a tapered leader, an optional tippet section, and a fly. Rods, reels, lines and some flies are bought in the tackle shop with points ('price'); price 0 means you start with it. Lengths are in feet.",
   "leaders": [
-    { "id": "7.5-3X", "feet": 7.5, "tip": "3X", "label": "7.5 ft · 3X", "note": "Short and stout. Turns over heavy flies in pocket water." },
-    { "id": "7.5-4X", "feet": 7.5, "tip": "4X", "label": "7.5 ft · 4X", "note": "Short, for close work in broken water." },
-    { "id": "9-4X", "feet": 9, "tip": "4X", "label": "9 ft · 4X", "note": "The workhorse for nymphs and dry droppers." },
-    { "id": "9-5X", "feet": 9, "tip": "5X", "label": "9 ft · 5X", "note": "The all-rounder for dries." },
-    { "id": "12-5X", "feet": 12, "tip": "5X", "label": "12 ft · 5X", "note": "Long, for clear water and wary fish." },
-    { "id": "12-6X", "feet": 12, "tip": "6X", "label": "12 ft · 6X", "note": "Long and delicate, for flat water and tiny flies." }
+    {
+      "id": "7.5-3X",
+      "feet": 7.5,
+      "tip": "3X",
+      "label": "7.5 ft · 3X",
+      "note": "Short and stout. Turns over heavy flies in pocket water."
+    },
+    {
+      "id": "7.5-4X",
+      "feet": 7.5,
+      "tip": "4X",
+      "label": "7.5 ft · 4X",
+      "note": "Short, for close work in broken water."
+    },
+    {
+      "id": "9-4X",
+      "feet": 9,
+      "tip": "4X",
+      "label": "9 ft · 4X",
+      "note": "The workhorse for nymphs and dry droppers."
+    },
+    {
+      "id": "9-5X",
+      "feet": 9,
+      "tip": "5X",
+      "label": "9 ft · 5X",
+      "note": "The all-rounder for dries."
+    },
+    {
+      "id": "12-5X",
+      "feet": 12,
+      "tip": "5X",
+      "label": "12 ft · 5X",
+      "note": "Long, for clear water and wary fish."
+    },
+    {
+      "id": "12-6X",
+      "feet": 12,
+      "tip": "6X",
+      "label": "12 ft · 6X",
+      "note": "Long and delicate, for flat water and tiny flies."
+    }
   ],
   "tippets": [
-    { "id": "3X", "label": "3X", "mm": 0.2, "strengthKg": 3.6, "note": "Strong. Easy to see in clear water." },
-    { "id": "4X", "label": "4X", "mm": 0.18, "strengthKg": 2.7, "note": "Sturdy. Good with heavier flies." },
-    { "id": "5X", "label": "5X", "mm": 0.15, "strengthKg": 2.0, "note": "A fine all-round tippet." },
-    { "id": "6X", "label": "6X", "mm": 0.13, "strengthKg": 1.4, "note": "Nearly invisible. Easy to break." }
+    {
+      "id": "3X",
+      "label": "3X",
+      "mm": 0.2,
+      "strengthKg": 3.6,
+      "note": "Strong. Easy to see in clear water."
+    },
+    {
+      "id": "4X",
+      "label": "4X",
+      "mm": 0.18,
+      "strengthKg": 2.7,
+      "note": "Sturdy. Good with heavier flies."
+    },
+    {
+      "id": "5X",
+      "label": "5X",
+      "mm": 0.15,
+      "strengthKg": 2.0,
+      "note": "A fine all-round tippet."
+    },
+    {
+      "id": "6X",
+      "label": "6X",
+      "mm": 0.13,
+      "strengthKg": 1.4,
+      "note": "Nearly invisible. Easy to break."
+    }
   ],
-  "tippetLength": { "min": 0, "max": 4, "step": 0.5 },
-  "indicatorDepth": { "min": 1, "max": 8, "step": 0.5 },
-  "dropperLength": { "min": 0.5, "max": 4, "step": 0.25 },
+  "tippetLength": {
+    "min": 0,
+    "max": 4,
+    "step": 0.5
+  },
+  "indicatorDepth": {
+    "min": 1,
+    "max": 8,
+    "step": 0.5
+  },
+  "dropperLength": {
+    "min": 0.5,
+    "max": 4,
+    "step": 0.25
+  },
   "flies": [
-    { "id": "adams", "type": "dry", "size": "small", "hook": "#18", "name": "Parachute Adams", "note": "A small grey mayfly. The classic match for olives and spinners." },
-    { "id": "caddis", "type": "dry", "size": "medium", "hook": "#14", "name": "Elk Hair Caddis", "note": "A buoyant, medium all-rounder. Duns and evening caddis." },
-    { "id": "hopper", "type": "dry", "size": "large", "hook": "#10", "name": "Foam Hopper", "note": "A big grasshopper. Lands with a plop near the bank on summer afternoons." },
-    { "id": "zebra", "type": "nymph", "size": "small", "hook": "#18", "name": "Zebra Midge", "note": "Tiny and slim. Sinks slowly; best in slow, clear water." },
-    { "id": "pt", "type": "nymph", "size": "medium", "hook": "#14", "name": "Pheasant Tail", "note": "The nymph everything eats. Bead-head, sinks steadily." },
-    { "id": "stone", "type": "nymph", "size": "large", "hook": "#10", "name": "Tungsten Stonefly", "note": "Big and heavy. Gets down fast in deep, fast water." },
-    { "id": "dd-small", "type": "drydropper", "size": "small", "hook": "#18", "name": "Adams + Zebra Midge", "note": "Delicate pair for slow seams and the flat." },
-    { "id": "dd-medium", "type": "drydropper", "size": "medium", "hook": "#14", "name": "Caddis + Pheasant Tail", "note": "The go-to pair for riffles and seams." },
-    { "id": "dd-large", "type": "drydropper", "size": "large", "hook": "#10", "name": "Hopper + Stonefly", "note": "A big buoyant hopper holding up a heavy nymph. Banks and pockets." }
+    {
+      "id": "adams",
+      "type": "dry",
+      "size": "small",
+      "hook": "#18",
+      "name": "Parachute Adams",
+      "note": "A small grey mayfly. The classic match for olives and spinners.",
+      "use": "Small mayflies or 'olives' on the surface, and soft sipping rises on slow water.",
+      "price": 0
+    },
+    {
+      "id": "caddis",
+      "type": "dry",
+      "size": "medium",
+      "hook": "#14",
+      "name": "Elk Hair Caddis",
+      "note": "A buoyant, medium all-rounder. Duns and evening caddis.",
+      "use": "Medium insects fluttering on the water, especially in the evening.",
+      "price": 0
+    },
+    {
+      "id": "hopper",
+      "type": "dry",
+      "size": "large",
+      "hook": "#10",
+      "name": "Foam Hopper",
+      "note": "A big grasshopper. Lands with a plop near the bank on summer afternoons.",
+      "use": "Warm sunny afternoons near grassy banks, when grasshoppers fall in.",
+      "price": 0
+    },
+    {
+      "id": "zebra",
+      "type": "nymph",
+      "size": "small",
+      "hook": "#18",
+      "name": "Zebra Midge",
+      "note": "Tiny and slim. Sinks slowly; best in slow, clear water.",
+      "use": "Slow, clear water when fish are fussy and nothing is hatching.",
+      "price": 0
+    },
+    {
+      "id": "pt",
+      "type": "nymph",
+      "size": "medium",
+      "hook": "#14",
+      "name": "Pheasant Tail",
+      "note": "The nymph everything eats. Bead-head, sinks steadily.",
+      "use": "Almost any time nothing is on the surface. A great first nymph.",
+      "price": 0
+    },
+    {
+      "id": "stone",
+      "type": "nymph",
+      "size": "large",
+      "hook": "#10",
+      "name": "Tungsten Stonefly",
+      "note": "Big and heavy. Gets down fast in deep, fast water.",
+      "use": "Deep or fast water where you need to get down quickly.",
+      "price": 0
+    },
+    {
+      "id": "dd-small",
+      "type": "drydropper",
+      "size": "small",
+      "hook": "#18",
+      "name": "Adams + Zebra Midge",
+      "note": "Delicate pair for slow seams and the flat.",
+      "use": "Slow seams and the flat when you're not sure if fish are up or down.",
+      "price": 0
+    },
+    {
+      "id": "dd-medium",
+      "type": "drydropper",
+      "size": "medium",
+      "hook": "#14",
+      "name": "Caddis + Pheasant Tail",
+      "note": "The go-to pair for riffles and seams.",
+      "use": "Riffles and seams: covers the surface and the middle at once.",
+      "price": 0
+    },
+    {
+      "id": "dd-large",
+      "type": "drydropper",
+      "size": "large",
+      "hook": "#10",
+      "name": "Hopper + Stonefly",
+      "note": "A big buoyant hopper holding up a heavy nymph. Banks and pockets.",
+      "use": "Banks and pocket water on summer afternoons.",
+      "price": 0
+    },
+    {
+      "id": "wulff",
+      "type": "dry",
+      "size": "medium",
+      "hook": "#12",
+      "name": "Royal Wulff",
+      "note": "A bright, buoyant attractor. Brings fish up in riffles and pockets even when nothing is hatching.",
+      "bonus": {
+        "waters": [
+          "riffle",
+          "pocket",
+          "seam"
+        ],
+        "noHatch": 1.35
+      },
+      "use": "Searching riffles and pockets when nothing is hatching.",
+      "price": 300
+    },
+    {
+      "id": "cdc",
+      "type": "dry",
+      "size": "small",
+      "hook": "#18",
+      "name": "CDC Olive Emerger",
+      "note": "Hangs half-in, half-out of the film like a hatching olive. Deadly for picky fish on the flat.",
+      "bonus": {
+        "waters": [
+          "flat",
+          "seam"
+        ],
+        "hatch": 1.3
+      },
+      "use": "Picky fish sipping small olives on the flat.",
+      "price": 700
+    },
+    {
+      "id": "copper",
+      "type": "nymph",
+      "size": "medium",
+      "hook": "#16",
+      "name": "Copper John",
+      "note": "Heavy copper body and a flashy wing case. Sinks fast for a medium nymph.",
+      "sink": 1.35,
+      "use": "Medium-fast water where a Pheasant Tail doesn't get down.",
+      "price": 500
+    },
+    {
+      "id": "perdigon",
+      "type": "nymph",
+      "size": "small",
+      "hook": "#16",
+      "name": "Tungsten Perdigon",
+      "note": "Slim, glassy and very heavy for its size: a small fly that gets deep in fast water.",
+      "sink": 1.8,
+      "use": "Deep, fast pockets where a small fly has to sink fast.",
+      "price": 1000
+    },
+    {
+      "id": "dd-wulff",
+      "type": "drydropper",
+      "size": "medium",
+      "hook": "#12",
+      "name": "Royal Wulff + Copper John",
+      "note": "A buoyant attractor carrying a fast-sinking nymph. Searches pocket water thoroughly.",
+      "bonus": {
+        "waters": [
+          "riffle",
+          "pocket"
+        ],
+        "noHatch": 1.2
+      },
+      "sink": 1.3,
+      "use": "Searching pocket water with both a dry and a fast-sinking nymph.",
+      "price": 1600
+    }
   ],
   "flyTypes": [
-    { "id": "dry", "label": "Dry flies", "note": "Float on the surface, for fish that are looking up." },
-    { "id": "nymph", "label": "Nymphs", "note": "Fished under an indicator, near the bottom where trout do most of their feeding." },
-    { "id": "drydropper", "label": "Dry droppers", "note": "A dry with a nymph hung under it. Fishes two depths at once." }
+    {
+      "id": "dry",
+      "label": "Dry flies",
+      "note": "Float on the surface, for fish that are looking up."
+    },
+    {
+      "id": "nymph",
+      "label": "Nymphs",
+      "note": "Fished under an indicator, near the bottom where trout do most of their feeding."
+    },
+    {
+      "id": "drydropper",
+      "label": "Dry droppers",
+      "note": "A dry with a nymph hung under it. Fishes two depths at once."
+    }
   ],
   "flySizes": [
-    { "id": "small", "label": "Small #18", "rank": 0 },
-    { "id": "medium", "label": "Medium #14", "rank": 1 },
-    { "id": "large", "label": "Large #10", "rank": 2 }
-  ]
+    {
+      "id": "small",
+      "label": "Small #18",
+      "rank": 0
+    },
+    {
+      "id": "medium",
+      "label": "Medium #14",
+      "rank": 1
+    },
+    {
+      "id": "large",
+      "label": "Large #10",
+      "rank": 2
+    }
+  ],
+  "rods": [
+    {
+      "id": "clearwater",
+      "brand": "Orvis",
+      "name": "Clearwater 9' #5",
+      "weight": 5,
+      "lengthFt": 9,
+      "action": "Moderate-fast",
+      "blank": "#3d4a32",
+      "wrap": "#b9a25a",
+      "grip": "#c79a5e",
+      "maxCast": 24,
+      "accuracy": 1.0,
+      "presentation": 1.0,
+      "cushion": 1.0,
+      "power": 1.0,
+      "note": "An honest all-rounder. Does everything well enough.",
+      "price": 0
+    },
+    {
+      "id": "scott-g",
+      "brand": "Scott",
+      "name": "G Series 8'8\" #4",
+      "weight": 4,
+      "lengthFt": 8.67,
+      "action": "Moderate",
+      "blank": "#6b4a2e",
+      "wrap": "#2a2a2a",
+      "grip": "#d1a86a",
+      "maxCast": 21,
+      "accuracy": 0.8,
+      "presentation": 0.7,
+      "cushion": 1.25,
+      "power": 0.8,
+      "note": "A soft, sweet dry-fly rod. Lands flies like thistledown and protects fine tippet, but runs out of reach and muscle on big fish.",
+      "price": 600
+    },
+    {
+      "id": "elevation",
+      "brand": "Guideline",
+      "name": "Elevation 9'6\" #6",
+      "weight": 6,
+      "lengthFt": 9.5,
+      "action": "Fast",
+      "blank": "#22272b",
+      "wrap": "#8fb3c4",
+      "grip": "#c49a62",
+      "maxCast": 29,
+      "accuracy": 0.85,
+      "presentation": 1.2,
+      "cushion": 0.9,
+      "power": 1.4,
+      "note": "A powerful, fast rod. Long casts, great line control and real backbone for steering big fish, but lands a little heavier.",
+      "price": 1500
+    }
+  ],
+  "reels": [
+    {
+      "id": "battenkill",
+      "brand": "Orvis",
+      "name": "Battenkill Click",
+      "drag": "Click & pawl",
+      "frame": "#b9b4a6",
+      "spool": "#8a8578",
+      "maxDrag": 5,
+      "smooth": 0.55,
+      "retrieve": 0.4,
+      "note": "A classic click-and-pawl reel with that lovely sound. Light drag that can stutter under a hard run.",
+      "price": 0
+    },
+    {
+      "id": "halo",
+      "brand": "Guideline",
+      "name": "Halo",
+      "drag": "Disc drag",
+      "frame": "#1f2326",
+      "spool": "#3c4246",
+      "maxDrag": 7,
+      "smooth": 0.85,
+      "retrieve": 0.5,
+      "note": "A smooth disc drag and a large arbor that picks up line fast.",
+      "price": 900
+    },
+    {
+      "id": "mirage",
+      "brand": "Orvis",
+      "name": "Mirage",
+      "drag": "Sealed carbon drag",
+      "frame": "#c9a24d",
+      "spool": "#2d2f31",
+      "maxDrag": 8,
+      "smooth": 1.0,
+      "retrieve": 0.58,
+      "note": "Sealed, silky-smooth and strong. Stops big fish without a stutter.",
+      "price": 2200
+    }
+  ],
+  "lines": [
+    {
+      "id": "hydros",
+      "brand": "Orvis",
+      "name": "Hydros Trout WF",
+      "color": "#f0a23a",
+      "presentation": 1.0,
+      "turnover": 1.0,
+      "mend": 1.0,
+      "float": 1.0,
+      "note": "A friendly all-round floating line.",
+      "price": 0
+    },
+    {
+      "id": "rio-gold",
+      "brand": "RIO",
+      "name": "Gold WF",
+      "color": "#d8c25a",
+      "presentation": 0.8,
+      "turnover": 0.9,
+      "mend": 1.35,
+      "float": 1.15,
+      "note": "A long belly that lands softly and mends beautifully, so the fly drags less.",
+      "price": 400
+    },
+    {
+      "id": "amplitude",
+      "brand": "Scientific Anglers",
+      "name": "Amplitude MPX",
+      "color": "#c9e46b",
+      "presentation": 1.1,
+      "turnover": 1.35,
+      "mend": 1.1,
+      "float": 1.1,
+      "note": "A strong front taper that turns over heavy nymphs, dry droppers and long leaders, even into the wind.",
+      "price": 1200
+    }
+  ],
+  "help": {
+    "flies": "<b>Dry flies</b> float on the surface. Use them when you see fish rising or insects on the water. <b>Nymphs</b> imitate young insects near the bottom, where trout eat most of the time; they hang under an orange indicator that dips when a fish takes. A <b>dry dropper</b> is a dry fly with a nymph hanging below it, so you fish both depths at once. <b>Hook size</b>: the bigger the number, the smaller the fly (#18 is tiny, #10 is big). Match the size of the insects you see.",
+    "leader": "The <b>leader</b> is the clear, tapered line between the thick fly line and the fly. A <b>long</b> leader keeps the fly line away from wary fish on calm, clear water; a <b>short</b> one is easier to control in fast water. The <b>tippet</b> is the thin end piece the fly is tied to. Its <b>X number</b> tells the thickness: higher X = thinner and harder for fish to see, but weaker (6X for fussy fish on the flat, 3X–4X for big fish near rocks). Use tippet the same size as the leader tip, or finer. For nymphs, set the <b>indicator depth</b> to about the depth of the water, so the fly drifts just above the bottom.",
+    "rod": "The <b>rod</b> casts the line and cushions the fight. The # number is the line weight it's built for: light rods (#3–#4) are delicate, heavier ones (#6) cast further and handle bigger fish.",
+    "reel": "The <b>reel</b> holds the line and has a <b>drag</b>: a brake that lets a running fish take line instead of breaking the tippet. Smoother, stronger drags make fights easier.",
+    "line": "The <b>fly line</b> is the thick, coloured line that carries the cast. Some land softer, some mend more easily, some turn over heavy flies better."
+  }
 }

@@ -12,7 +12,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const ease = (t) => t * t * (3 - 2 * t);
 const UP = new THREE.Vector3(0, 1, 0);
 
-const ROD_LEN = 2.75; // 9 ft
+const GUIDE_AT = [0.13, 0.22, 0.31, 0.4, 0.49, 0.58, 0.67, 0.76, 0.84, 0.92, 1];
 const SEGS = 16;
 const SIDES = 6;
 const LINE_PTS = 56;
@@ -88,6 +88,32 @@ function buildDry(id) {
     const hk = hackleDisc(0.009);
     hk.position.set(0, 0.002, -0.009);
     g.add(body, wing, hk);
+  } else if (id === 'wulff') {
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.003, 0.012, 4, 8), mat('#3e5a3a'));
+    body.rotation.x = Math.PI / 2;
+    body.position.y = 0.002;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0034, 0.0034, 0.004, 8), mat('#c8323a'));
+    band.rotation.x = Math.PI / 2;
+    band.position.y = 0.002;
+    const wingMat = new THREE.MeshBasicMaterial({ color: '#fdfcf6' });
+    for (const s2 of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.ConeGeometry(0.004, 0.016, 6), wingMat);
+      w.position.set(s2 * 0.004, 0.011, -0.006);
+      w.rotation.z = -s2 * 0.35;
+      g.add(w);
+    }
+    const hk = hackleDisc(0.011);
+    hk.rotation.x = 0;
+    hk.position.set(0, 0.004, -0.004);
+    g.add(body, band, hk);
+  } else if (id === 'cdc') {
+    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.0025, 0.011, 4, 8), mat('#7b8a4e'));
+    body.rotation.x = Math.PI / 2 + 0.3;
+    body.position.y = -0.001;
+    const puff = new THREE.Mesh(new THREE.IcosahedronGeometry(0.0065, 1), mat('#9ca3a8'));
+    puff.scale.set(1, 1.2, 1.3);
+    puff.position.set(0, 0.006, -0.004);
+    g.add(body, puff);
   } else {
     // Parachute Adams: grey body, tail, white post, hackle wound flat around the post.
     const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.0026, 0.012, 4, 8), mat('#8b8f92'));
@@ -122,9 +148,9 @@ function buildIndicator() {
 
 function buildNymph(id) {
   const g = new THREE.Group();
-  const col = { zebra: '#1d1d1f', pt: '#8a5a2e', stone: '#4e3a26' }[id] || '#8a5a2e';
-  const bead = { zebra: '#d9dde0', pt: '#e2b543', stone: '#5f666b' }[id] || '#e2b543';
-  const len = { zebra: 0.012, pt: 0.016, stone: 0.026 }[id] || 0.016;
+  const col = { zebra: '#1d1d1f', pt: '#8a5a2e', stone: '#4e3a26', copper: '#c4682a', perdigon: '#5a3a7a' }[id] || '#8a5a2e';
+  const bead = { zebra: '#d9dde0', pt: '#e2b543', stone: '#5f666b', copper: '#e2b543', perdigon: '#2d2f31' }[id] || '#e2b543';
+  const len = { zebra: 0.012, pt: 0.016, stone: 0.026, copper: 0.017, perdigon: 0.015 }[id] || 0.016;
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(len * 0.18, len, 4, 8), mat(col));
   body.rotation.x = Math.PI / 2;
   const b = new THREE.Mesh(new THREE.SphereGeometry(len * 0.24, 8, 6), mat(bead, { metalness: 0.6, roughness: 0.3 }));
@@ -133,8 +159,8 @@ function buildNymph(id) {
   return g;
 }
 
-const NYMPH_OF = { 'dd-small': 'zebra', 'dd-medium': 'pt', 'dd-large': 'stone' };
-const DRY_OF = { 'dd-small': 'adams', 'dd-medium': 'caddis', 'dd-large': 'hopper' };
+const NYMPH_OF = { 'dd-small': 'zebra', 'dd-medium': 'pt', 'dd-large': 'stone', 'dd-wulff': 'copper' };
+const DRY_OF = { 'dd-small': 'adams', 'dd-medium': 'caddis', 'dd-large': 'hopper', 'dd-wulff': 'wulff' };
 
 export class Tackle {
   constructor(scene, camera) {
@@ -165,16 +191,71 @@ export class Tackle {
       }
     }
     this.rodGeo.setIndex(idx);
-    this.rod = new THREE.Mesh(this.rodGeo, new THREE.MeshStandardMaterial({ color: '#3a2c22', roughness: 0.35, metalness: 0.2 }));
+    this.rodLen = 2.75;
+    this.rodMat = new THREE.MeshStandardMaterial({ color: '#3a2c22', roughness: 0.3, metalness: 0.25 });
+    this.rod = new THREE.Mesh(this.rodGeo, this.rodMat);
     this.rod.frustumCulled = false;
-    this.handle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.019, 0.24, 10), new THREE.MeshStandardMaterial({ color: '#c49a62', roughness: 0.9 }));
+
+    // A shaped cork grip and a metal reel seat.
+    const gripProfile = [[0.012, 0], [0.016, 0.02], [0.019, 0.08], [0.0175, 0.17], [0.0135, 0.23], [0.011, 0.245]].map(([r, y]) => new THREE.Vector2(r, y));
+    const gripGeo = new THREE.LatheGeometry(gripProfile, 14);
+    gripGeo.translate(0, -0.12, 0);
+    this.gripMat = new THREE.MeshStandardMaterial({ color: '#c49a62', roughness: 0.95 });
+    this.handle = new THREE.Mesh(gripGeo, this.gripMat);
+    const metal = new THREE.MeshStandardMaterial({ color: '#8e9296', roughness: 0.3, metalness: 0.85 });
+    this.seat = new THREE.Mesh(new THREE.CylinderGeometry(0.0115, 0.0115, 0.075, 12), metal);
+
+    // The reel: frame, backplate, spool with ports and wound line, handle.
     this.reel = new THREE.Group();
-    const reelBody = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.028, 22), new THREE.MeshStandardMaterial({ color: '#2b2f33', roughness: 0.35, metalness: 0.7 }));
-    reelBody.rotation.z = Math.PI / 2;
-    this.spoolMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 0.03, 6), new THREE.MeshStandardMaterial({ color: '#d7c06a', roughness: 0.6 }));
-    this.spoolMesh.rotation.z = Math.PI / 2;
-    this.reel.add(reelBody, this.spoolMesh);
-    this.scene.add(this.rod, this.handle, this.reel);
+    this.reelFrameMat = new THREE.MeshStandardMaterial({ color: '#b9b4a6', roughness: 0.3, metalness: 0.8 });
+    this.reelSpoolMat = new THREE.MeshStandardMaterial({ color: '#8a8578', roughness: 0.35, metalness: 0.7 });
+    this.reelLineMat = new THREE.MeshStandardMaterial({ color: '#f0a23a', roughness: 0.7 });
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.043, 0.0055, 8, 36), this.reelFrameMat);
+    frame.rotation.y = Math.PI / 2;
+    const back = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 0.004, 32), this.reelFrameMat);
+    back.rotation.z = Math.PI / 2;
+    back.position.x = -0.013;
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.06, 0.012), this.reelFrameMat);
+    foot.position.set(0, 0, 0.05);
+    this.spoolMesh = new THREE.Group();
+    const spoolFace = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.038, 0.004, 32), this.reelSpoolMat);
+    spoolFace.rotation.z = Math.PI / 2;
+    spoolFace.position.x = 0.012;
+    const wound = new THREE.Mesh(new THREE.CylinderGeometry(0.033, 0.033, 0.02, 28), this.reelLineMat);
+    wound.rotation.z = Math.PI / 2;
+    const portMat = new THREE.MeshStandardMaterial({ color: '#1b1d1f', roughness: 0.6 });
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      const port = new THREE.Mesh(new THREE.CylinderGeometry(0.0075, 0.0075, 0.005, 14), portMat);
+      port.rotation.z = Math.PI / 2;
+      port.position.set(0.0125, Math.cos(a) * 0.022, Math.sin(a) * 0.022);
+      this.spoolMesh.add(port);
+    }
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.0055, 0.006, 0.02, 10), new THREE.MeshStandardMaterial({ color: '#2a2622', roughness: 0.5 }));
+    knob.rotation.z = Math.PI / 2;
+    knob.position.set(0.023, 0.026, 0);
+    this.spoolMesh.add(spoolFace, wound, knob);
+    this.reel.add(frame, back, foot, this.spoolMesh);
+    this.scene.add(this.rod, this.handle, this.seat, this.reel);
+
+    // Line guides: snake guides along the blank, a big stripping guide, a tip-top.
+    this.guides = GUIDE_AT.map((f, i) => {
+      const r = i === 0 ? 0.012 : f === 1 ? 0.003 : lerp(0.0065, 0.0036, f);
+      const g = new THREE.Mesh(new THREE.TorusGeometry(r, i === 0 ? 0.0016 : 0.0011, 6, 16), metal);
+      g.userData.r = r;
+      this.scene.add(g);
+      return g;
+    });
+    this.guidePts = GUIDE_AT.map(() => new THREE.Vector3());
+
+    // The fly line running from the reel up through the guides.
+    this.rodLineGeo = new LineGeometry();
+    this.rodLinePts = new Float32Array((GUIDE_AT.length + 1) * 3);
+    this.rodLineGeo.setPositions(this.rodLinePts);
+    this.rodLineMat = new LineMaterial({ color: '#f0a23a', linewidth: 1.6, worldUnits: false });
+    this.rodLine = new Line2(this.rodLineGeo, this.rodLineMat);
+    this.rodLine.frustumCulled = false;
+    this.scene.add(this.rodLine);
 
     // Fly line + leader.
     this.lineGeo = new LineGeometry();
@@ -189,6 +270,7 @@ export class Tackle {
       colors.push(c.r, c.g, c.b);
     }
     this.lineGeo.setColors(colors);
+    this.lineColors = colors;
     this.curvePts = Array.from({ length: LINE_PTS }, () => new THREE.Vector3());
     this.curve = new THREE.CatmullRomCurve3(this.curvePts, false, 'centripetal');
     this.lineMat = new LineMaterial({ linewidth: 2.4, vertexColors: true, transparent: true, opacity: 0.95, worldUnits: false });
@@ -238,12 +320,31 @@ export class Tackle {
     this.flyType = fly.type;
   }
 
+  // Colours and size of the chosen rod, reel and line.
+  setGear(info) {
+    this.rodLen = info.rod.lengthFt * 0.3048;
+    this.rodMat.color.set(info.rod.blank);
+    this.gripMat.color.set(info.rod.grip);
+    this.reelFrameMat.color.set(info.reel.frame);
+    this.reelSpoolMat.color.set(info.reel.spool);
+    this.reelLineMat.color.set(info.line.color);
+    this.rodLineMat.color.set(info.line.color);
+    const fl = new THREE.Color(info.line.color), ld = new THREE.Color('#d9e2dc');
+    const c = [];
+    for (let i = 0; i < RENDER_PTS; i++) {
+      const k = i / (RENDER_PTS - 1) < 0.8 ? fl : ld;
+      c.push(k.r, k.g, k.b);
+    }
+    this.lineGeo.setColors(c);
+  }
+
   setDepth(m) {
     this.depthM = m;
   }
 
   resize(w, h) {
     this.lineMat.resolution.set(w, h);
+    this.rodLineMat.resolution.set(w, h);
     this.subMat.resolution.set(w, h);
   }
 
@@ -288,9 +389,9 @@ export class Tackle {
   // A mend: a flick of the rod lifts the belly off the water and throws it
   // upstream. The line then falls back under gravity in soft curves, and
   // the fly (and the last bit of leader) stays where it is.
-  mend() {
+  mend(strength = 1) {
     if (!this.sim) return;
-    this.pendingMend = true;
+    this.pendingMend = strength;
     this.mended = 0.9;
   }
 
@@ -319,7 +420,7 @@ export class Tackle {
   update(dt, aimPoint) {
     this.time += dt;
     const cam = this.camera;
-    this.base.set(0.3, -0.38, -0.4).applyMatrix4(cam.matrixWorld);
+    this.base.set(0.27, -0.27, -0.68).applyMatrix4(cam.matrixWorld);
     const camPos = cam.position;
     if (aimPoint) {
       this.aimDir.set(aimPoint.x - camPos.x, 0, aimPoint.z - camPos.z);
@@ -365,16 +466,22 @@ export class Tackle {
 
     if (this.mode === 'fight' && this.fishPos) pullTo.copy(this.fishPos);
     else if (this.mode === 'drift' && this.sim) pullTo.copy(this.sim.P[4]);
-    else pullTo.copy(this.base).addScaledVector(dir, ROD_LEN).add(new THREE.Vector3(0, -2, 0));
+    else pullTo.copy(this.base).addScaledVector(dir, this.rodLen).add(new THREE.Vector3(0, -2, 0));
     this.rodDir = dir;
     this.buildRod(dir, pullTo, whip);
 
-    this.handle.position.copy(this.base).addScaledVector(dir, -0.04);
+    this.handle.position.copy(this.base).addScaledVector(dir, -0.02);
     this.handle.quaternion.setFromUnitVectors(UP, dir);
+    this.seat.position.copy(this.base).addScaledVector(dir, -0.18);
+    this.seat.quaternion.setFromUnitVectors(UP, dir);
     const down = new THREE.Vector3().crossVectors(dir, side).normalize();
-    this.reel.position.copy(this.base).addScaledVector(dir, -0.17).addScaledVector(down, -0.055);
-    this.reel.quaternion.setFromUnitVectors(UP, dir);
-    this.spoolMesh.rotation.y = this.spool;
+    this.down = down;
+    // The reel hangs under the rod, spool axis across it.
+    const rx = side.clone(), ry = dir.clone(), rz = new THREE.Vector3().crossVectors(rx, ry);
+    this.reel.position.copy(this.base).addScaledVector(dir, -0.18).addScaledVector(down, 0.062);
+    this.reel.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(rx, ry, rz));
+    this.spoolMesh.rotation.x = this.spool;
+    this.placeGuides(side);
 
     this.updateLine(dt);
   }
@@ -384,7 +491,7 @@ export class Tackle {
     const pts = [];
     const p = this.base.clone();
     pts.push(p.clone());
-    const segLen = ROD_LEN / SEGS;
+    const segLen = this.rodLen / SEGS;
     const pullDir = new THREE.Vector3();
     const whipDir = new THREE.Vector3().copy(this.aimDir).multiplyScalar(-1).addScaledVector(UP, 0.2).normalize();
     for (let i = 0; i < SEGS; i++) {
@@ -397,6 +504,7 @@ export class Tackle {
       pts.push(p.clone());
     }
     this.tip.copy(p);
+    this.rodPts = pts;
     const t = new THREE.Vector3(), n = new THREE.Vector3(), b = new THREE.Vector3();
     for (let i = 0; i <= SEGS; i++) {
       const a = pts[Math.max(0, i - 1)], c = pts[Math.min(SEGS, i + 1)];
@@ -416,17 +524,53 @@ export class Tackle {
     this.rodGeo.computeVertexNormals();
   }
 
+  // Guides sit under the blank along its bend; the line threads through them.
+  placeGuides(side) {
+    const pts = this.rodPts;
+    const t = new THREE.Vector3(), dn = new THREE.Vector3();
+    const Z = new THREE.Vector3(0, 0, 1);
+    GUIDE_AT.forEach((f, i) => {
+      const x = f * SEGS;
+      const i0 = Math.min(SEGS - 1, Math.floor(x)), k = x - i0;
+      const p = pts[i0].clone().lerp(pts[i0 + 1], k);
+      t.subVectors(pts[i0 + 1], pts[i0]).normalize();
+      dn.crossVectors(t, side).normalize();
+      const g = this.guides[i];
+      const blankR = lerp(0.0075, 0.0018, f);
+      const off = f === 1 ? 0 : blankR + g.userData.r + 0.004;
+      g.position.copy(p).addScaledVector(dn, off);
+      g.quaternion.setFromUnitVectors(Z, t);
+      this.guidePts[i].copy(g.position);
+    });
+    // Reel → stripping guide → … → tip-top.
+    const L = this.rodLinePts;
+    const start = this.reel.position.clone().addScaledVector(this.down, -0.03);
+    L[0] = start.x; L[1] = start.y; L[2] = start.z;
+    this.guidePts.forEach((q, i) => { L[(i + 1) * 3] = q.x; L[(i + 1) * 3 + 1] = q.y; L[(i + 1) * 3 + 2] = q.z; });
+    this.rodLineGeo.setPositions(L);
+  }
+
   // One step of the rope: gravity in the air, floating and drifting on the
   // water, and segment lengths that can bunch up but not stretch.
   stepSim(dt) {
-    const { P, prev, seg, flowAt } = this.sim;
+    const { P, prev, flowAt } = this.sim;
     const n = LINE_PTS;
+    // Strip in slack as the fly comes back towards you, like an angler would,
+    // so only a little loose line lies on the water.
+    const total = this.sim.seg * (n - 1);
+    const dNow = this.tip.distanceTo(P[n - 1]);
+    const coming = this.sim.lastD !== undefined && dNow < this.sim.lastD;
+    this.sim.lastD = dNow;
+    const want = dNow * 1.3 + 1.5;
+    if (coming && total > want && this.mended <= 0) this.sim.seg = Math.max(want, total - dt * 0.6) / (n - 1);
+    const seg = this.sim.seg;
     const steps = 3;
     const h = dt / steps;
     let dragSum = 0;
     for (let s = 0; s < steps; s++) {
       P[0].copy(this.tip);
       if (this.pendingMend && s === 0) {
+        this.pendingMendStrength = this.pendingMend;
         this.pendingMend = false;
         for (let i = 2; i < n; i++) {
           const u = i / (n - 1);
@@ -435,7 +579,8 @@ export class Tackle {
           if (k <= 0) continue;
           const f = flowAt(P[i].x, P[i].z);
           const sp = Math.hypot(f.vx, f.vz) || 1;
-          const vx = (-f.vx / sp) * 1.8 * k, vz = (-f.vz / sp) * 1.8 * k, vy = 2.3 * k;
+          const m = this.pendingMendStrength;
+          const vx = (-f.vx / sp) * 1.5 * k * m, vz = (-f.vz / sp) * 1.5 * k * m, vy = 2.0 * k * Math.min(1.2, m);
           prev[i].set(P[i].x - vx * h, Math.max(WATER_Y, P[i].y) - vy * h, P[i].z - vz * h);
           if (P[i].y < WATER_Y + 0.002) P[i].y = WATER_Y + 0.003;
         }
@@ -494,7 +639,7 @@ export class Tackle {
     }
     // How fast the line is pulling the fly against the current (m/s), 0..1.
     const dragV = dragSum / steps;
-    this.drag = lerp(this.drag, clamp((dragV - 0.04) / 0.3, 0, 1), Math.min(1, dt * 4));
+    this.drag = lerp(this.drag, clamp((dragV - 0.07) / 0.35, 0, 1), Math.min(1, dt * 4));
     this.flyPos.copy(P[n - 1]);
   }
 

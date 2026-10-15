@@ -97,3 +97,11 @@ test('tippet thicker than the leader tip hurts the cast', () => {
   const bad = evaluateRig(s, { leader: 10, tippet: '5X', fly: 'drydropper', size: 'medium', turnover: false }, ctx);
   assert.ok(bad.match < ok.match * 0.75);
 });
+
+test('attractor and emerger patterns shine in the right water', () => {
+  const s = spot('riffle-bucket');
+  const quiet = { water, day: day('overcast', 'clear'), minute: 600 };
+  const plain = evaluateRig(s, { leader: 9, tippet: '5X', fly: 'dry', size: 'medium' }, quiet);
+  const wulff = evaluateRig(s, { leader: 9, tippet: '5X', fly: 'dry', size: 'medium', bonus: { waters: ['riffle'], noHatch: 1.35 } }, quiet);
+  assert.ok(wulff.match > plain.match * 1.25);
+});

@@ -23,6 +23,7 @@
       <span class="chip score" id="points" title="Points">0 pts</span>
     </div>
     <div class="top-actions">
+      <button class="icon-btn" id="btn-shop" title="Tackle shop" aria-label="Tackle shop">&#128722;</button>
       <button class="icon-btn" id="btn-polar" title="Polarized glasses: cut the glare to see fish" aria-label="Polarized glasses">&#128374;</button>
       <button class="icon-btn" id="btn-guide" title="Field guide" aria-label="Field guide">?</button>
       <button class="icon-btn" id="btn-log" title="Logbook" aria-label="Logbook">&#128214;</button>
@@ -37,6 +38,7 @@
     <section class="notes-card" id="notes-card">
       <button class="notes-head" id="notes-toggle"><span>River notes</span><span class="chev">&#9662;</span></button>
       <p id="notes" class="notes"></p>
+      <button class="check-btn" id="btn-insects">&#129712; Check the water</button>
     </section>
 
     <div class="map-wrap">
@@ -48,6 +50,12 @@
     <div class="aim-label" id="aim-label"></div>
     <div class="toast" id="toast" aria-live="polite"></div>
     <div class="floaters" id="floaters"></div>
+    <div class="tutorial" id="tutorial" hidden>
+      <div class="tut-top"><span class="tut-step"></span><span class="tut-dots"></span></div>
+      <b class="tut-title"></b>
+      <p class="tut-text"></p>
+      <div class="tut-actions"><button class="tut-skip">End tutorial</button><button class="tut-next">Next</button></div>
+    </div>
     <div class="jump-cue" id="jump-cue" hidden>⚠ JUMP!</div>
     <div class="polar-tint" id="polar-tint"></div>
     <ol class="log" id="log"></ol>
@@ -81,7 +89,7 @@
         <span class="rig-summary" id="fly-summary"></span>
       </button>
       <button class="secondary gear-btn" id="btn-leader">
-        <span class="lbl">Leader</span>
+        <span class="lbl">Rig</span>
         <span class="rig-summary" id="leader-summary"></span>
       </button>
       <button class="primary" id="btn-cast" disabled>Cast</button>
@@ -97,7 +105,8 @@
     </section>
 
     <section class="sheet-panel leaderbox" id="leaderbox" hidden>
-      <div class="panel-head"><h2>Build your leader</h2><button class="close small" data-hide="leaderbox" aria-label="Close">&times;</button></div>
+      <div class="panel-head"><h2>Your rig</h2><button class="close small" data-hide="leaderbox" aria-label="Close">&times;</button></div>
+      <div class="rig-tabs"></div>
       <div class="leader-body"></div>
       <p class="rig-note" id="rig-note">Changes are tied on before your next cast.</p>
     </section>
@@ -122,6 +131,7 @@
         </ul>
       </details>
       <button class="primary wide" id="btn-start">Walk down to the river</button>
+      <label class="tut-opt" id="tut-opt"><input type="checkbox" id="tut-check" checked> Show me how to play (short tutorial)</label>
       <p class="tiny">Best with sound on. Headphones make the river sound lovely.</p>
     </div>
   </div>
@@ -168,12 +178,35 @@
     </div>
   </div>
 
+  <!-- Tackle shop -->
+  <div class="modal" id="shop" hidden>
+    <div class="sheet wide-sheet">
+      <button class="close" data-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Tackle shop</p>
+      <h1>Riverside Tackle</h1>
+      <p class="lede">Spend the points you earn spotting and catching fish. What you buy is yours to keep, and goes straight onto your rig. <span class="shop-wallet"></span></p>
+      <div class="shop-body"></div>
+    </div>
+  </div>
+
+  <!-- What's on the water -->
+  <div class="modal" id="insects" hidden>
+    <div class="sheet">
+      <button class="close" data-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Check the water</p>
+      <h1>What are they eating?</h1>
+      <p class="lede">You crouch at the water's edge and look closely at the surface and the stones.</p>
+      <div class="insect-body"></div>
+    </div>
+  </div>
+
   <!-- Field guide -->
   <div class="modal" id="guide" hidden>
     <div class="sheet wide-sheet">
       <button class="close" data-close aria-label="Close">&times;</button>
       <p class="eyebrow">Field guide</p>
       <h1>Reading the river</h1>
+      <button class="secondary" id="btn-tutorial">&#9654; Play the tutorial</button>
       <div class="guide-grid">
         <div>
           <h3>Where trout live</h3>

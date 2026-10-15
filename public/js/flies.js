@@ -70,9 +70,41 @@ const PATTERNS = {
     <path d="M30 32 Q38 26 50 32" stroke="#6a5038" stroke-width="3" fill="none" stroke-linecap="round"/>
     <path d="M18 36 l-10 -8 M18 44 l-10 6" stroke="#4a3624" stroke-width="1.4" stroke-linecap="round"/>
     <circle cx="22" cy="40" r="7" fill="#5f666b" stroke="#3d4347"/><circle cx="20" cy="38" r="2" fill="#a9b1b6"/>`,
+  wulff: () => `
+    ${tail(82, 41, '#4a3424', 18, 4)}
+    ${hook()}
+    <path d="M44 37 Q62 34 84 39 Q62 46 44 44 Z" fill="#3e5a3a"/>
+    <rect x="56" y="36" width="10" height="9" fill="#c8323a"/>
+    <path d="M38 34 Q34 10 30 8 Q40 12 42 34 Z" fill="#fbfaf2" stroke="#d9d6cc"/>
+    <path d="M44 34 Q48 10 54 8 Q50 14 48 34 Z" fill="#fbfaf2" stroke="#d9d6cc"/>
+    ${radial(42, 38, 15, 18, '#8a5a34', 0.5)}`,
+  cdc: () => `
+    <path d="M82 42 Q96 46 104 52" stroke="#c99a52" stroke-width="5" stroke-linecap="round" opacity="0.8"/>
+    ${hook()}
+    <path d="M36 37 Q60 35 84 40 Q60 46 36 44 Z" fill="#7b8a4e"/>
+    <path d="M30 34 Q28 16 40 14 Q42 6 52 12 Q62 8 60 20 Q66 26 52 34 Z" fill="#9ca3a8" stroke="#7c8388"/>
+    ${[36, 42, 48, 54].map((x) => `<path d="M${x} 32 q2 -8 -1 -14" stroke="#c9ced1" stroke-width="1" fill="none"/>`).join('')}`,
+  copper: () => `
+    <path d="M84 40 L104 34 M84 41 L104 48" stroke="#f2efe4" stroke-width="2.2" stroke-linecap="round"/>
+    ${hook()}
+    <path d="M48 36 Q66 34 86 39 Q66 46 48 45 Z" fill="#c4682a"/>
+    ${[52, 58, 64, 70, 76, 82].map((x) => `<line x1="${x}" y1="35" x2="${x + 1}" y2="45" stroke="#f0a050" stroke-width="2"/>`).join('')}
+    <ellipse cx="38" cy="40" rx="11" ry="7" fill="#3a2a1c"/>
+    <path d="M28 34 Q38 28 50 34" stroke="#1d1d1f" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M30 32 Q38 29 46 32" stroke="#b9d4e0" stroke-width="1.4" fill="none"/>
+    <path d="M32 46 l-5 8 M40 47 l0 9 M46 46 l5 8" stroke="#f2efe4" stroke-width="1.3" stroke-linecap="round"/>
+    <circle cx="24" cy="40" r="6" fill="#e2b543" stroke="#b3872a"/><circle cx="22" cy="38" r="1.8" fill="#fff6c8"/>`,
+  perdigon: () => `
+    ${tail(80, 40, '#b9a58a', 14, 3)}
+    ${hook()}
+    <path d="M28 37 Q56 35 82 39 L82 42 Q56 46 28 44 Z" fill="#5a3a7a"/>
+    <path d="M30 37.5 Q56 36 80 39.5" stroke="#b28ad4" stroke-width="1.6" fill="none" opacity="0.8"/>
+    <path d="M30 38 Q40 33 48 38" stroke="#1d1d1f" stroke-width="3" fill="none"/>
+    <circle cx="23" cy="40" r="6.2" fill="#2d2f31" stroke="#111"/><circle cx="21" cy="38" r="1.8" fill="#8a9196"/>`,
 };
 
 const COMBOS = {
+  'dd-wulff': ['wulff', 'copper'],
   'dd-small': ['adams', 'zebra'],
   'dd-medium': ['caddis', 'pt'],
   'dd-large': ['hopper', 'stone'],

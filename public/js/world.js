@@ -460,6 +460,7 @@ export class World {
       const conifer = rnd() < 0.55;
       spots.push({ x, z, y: this.heightAt(x, z), h: (conifer ? 9 : 7) + rnd() * 8, conifer, c: rnd() });
     }
+    this.treeSpots = spots;
     const conifers = spots.filter((t) => t.conifer), birches = spots.filter((t) => !t.conifer);
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
 
@@ -568,7 +569,7 @@ export class World {
 
   // --- Time & weather --------------------------------------------------------------
 
-  setConditions(minute, weather, clarity) {
+  setConditions(minute, weather, clarity, rain = 0) {
     let a = SKY[0], b = SKY[SKY.length - 1];
     for (let i = 0; i < SKY.length - 1; i++) {
       if (minute >= SKY[i][0] && minute <= SKY[i + 1][0]) { a = SKY[i]; b = SKY[i + 1]; break; }
@@ -579,7 +580,7 @@ export class World {
     const sunC = new THREE.Color(a[3]).lerp(new THREE.Color(b[3]), k);
     let sunI = lerp(a[4], b[4], k);
 
-    const grey = weather === 'overcast' ? 0.55 : weather === 'drizzle' ? 0.75 : 0;
+    const grey = Math.max(weather === 'overcast' ? 0.55 : weather === 'drizzle' ? 0.75 : 0, rain * 0.9);
     if (grey) {
       const g = new THREE.Color('#9aa3a8').multiplyScalar(0.4 + 0.6 * Math.min(1, sunI));
       top.lerp(g, grey);
@@ -599,8 +600,8 @@ export class World {
     this.skyUniforms.uSunColor.value.copy(sunC);
     this.skyUniforms.uSun.value = grey ? 0.15 : Math.min(1, sunI);
     this.scene.fog.color.copy(hor);
-    this.scene.fog.near = weather === 'drizzle' ? 25 : 50;
-    this.scene.fog.far = weather === 'drizzle' ? 150 : 240;
+    this.scene.fog.near = lerp(50, 22, Math.max(rain, weather === 'drizzle' ? 0.5 : 0));
+    this.scene.fog.far = lerp(240, 130, Math.max(rain, weather === 'drizzle' ? 0.5 : 0));
 
     this.sun.color.copy(sunC);
     this.sun.intensity = 0.25 + sunI * 1.3;
@@ -615,7 +616,7 @@ export class World {
     u.uSky.value.copy(top);
     u.uHorizon.value.copy(hor);
     u.uClarity.value = clarity === 'tinged' ? 0.35 : 1;
-    u.uRain.value = weather === 'drizzle' ? 1 : 0;
+    u.uRain.value = Math.max(rain, weather === 'drizzle' ? 0.5 : 0) * 1.5;
     u.uLight.value = clamp(0.45 + sunI * 0.5 + grey * 0.2, 0.3, 1.05);
     this.light = light;
     this.sunDir = sunDir;

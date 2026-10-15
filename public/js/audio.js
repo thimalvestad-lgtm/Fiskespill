@@ -116,12 +116,27 @@ export class Ambience {
     const s = this.state;
     this.riverLow.gain.gain.setTargetAtTime(0.25 + s.riverLevel * 0.45, t, 1.5);
     this.riverLow.filter.frequency.setTargetAtTime(300 + s.riverBright * 600, t, 1.5);
-    this.rain.gain.gain.setTargetAtTime(s.rain ? 0.035 : 0, t, 2);
+    const r = typeof s.rain === 'number' ? s.rain : s.rain ? 0.45 : 0;
+    this.rain.gain.gain.setTargetAtTime(r * 0.09, t, 2.5);
+    this.rain.filter.frequency.setTargetAtTime(3800 - r * 1800, t, 2.5);
+    if (r > 0.05 && !this.patterTimer) this.patter();
   }
 
   setEnabled(on) {
     this.enabled = on;
     if (this.ctx) this.master.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.3);
+  }
+
+  // Individual drops ticking on leaves and water.
+  patter() {
+    const r = typeof this.state.rain === 'number' ? this.state.rain : this.state.rain ? 0.45 : 0;
+    if (r <= 0.05 || !this.ctx) { this.patterTimer = null; return; }
+    if (this.enabled && this.ctx.state === 'running') {
+      const t = this.ctx.currentTime;
+      const n = 1 + Math.floor(r * 4);
+      for (let i = 0; i < n; i++) this.tone(t + Math.random() * 0.1, 2500 + Math.random() * 3000, 1500, 0.015, 0.006 + r * 0.008, Math.random() * 1.6 - 0.8, 'sine');
+    }
+    this.patterTimer = setTimeout(() => this.patter(), 60 + Math.random() * 120);
   }
 
   // --- Birds -------------------------------------------------------------
@@ -155,10 +170,16 @@ export class Ambience {
     o.stop(t + dur + 0.05);
   }
 
-  bird() {
+  // A song from a particular bird you can see: panned and scaled by distance.
+  birdAt(pan, vol = 1) {
+    if (!this.ctx || !this.enabled || this.ctx.state !== 'running') return;
+    this.bird(pan, vol);
+  }
+
+  bird(panOverride, volMul = 1) {
     const t = this.ctx.currentTime + 0.05;
-    const pan = Math.random() * 1.6 - 0.8;
-    const v = 0.025 + Math.random() * 0.03;
+    const pan = panOverride ?? Math.random() * 1.6 - 0.8;
+    const v = (0.025 + Math.random() * 0.03) * volMul;
     const part = this.state.part;
     const r = Math.random();
     if ((part === 'evening' || part === 'dusk') && r < 0.55) {

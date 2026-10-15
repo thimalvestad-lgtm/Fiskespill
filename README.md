@@ -15,6 +15,10 @@ Play it: https://fishing-game.thim-alvestad.workers.dev
 - **The take.** Fish rise up through the water to inspect your fly. They take it, or turn away with a hint about why. On a dry fly the nose breaks the surface; on a nymph the indicator dips. Hit *Strike!*
 - **The fight.** The rod bends with the line tension. Tap **Reel** (or Space) to crank line in; it only gains when the fish pulls less than the drag, set with **Drag − / +** against your tippet's breaking strength. If the drag is too tight, the tippet snaps. If it's too loose, the fish takes line and reaches the rocks or roots. Drag sideways on the river (or A/D) to lean the rod for side pressure and steer the fish away from cover. Slack line lets the hook fall out.
 - **Jumps.** Many trout jump when hooked and during runs. You can see it coming: the fish surges up, the surface bulges and swirls, and a ⚠ JUMP cue appears. Hold **Bow** (or B) to drop the rod tip through the jump. Keep the line tight while it's in the air and the fish throws the hook.
+- **Tackle shop (🛒).** Points you earn are also money. Buy rods (Orvis Clearwater, Scott G Series, Guideline Elevation), reels (Orvis Battenkill, Guideline Halo, Orvis Mirage), fly lines (Orvis Hydros, RIO Gold, Scientific Anglers Amplitude MPX) and more flies (Royal Wulff, CDC Emerger, Copper John, Perdigon). Each piece changes how you fish: casting reach and accuracy, how softly the line lands, how well it mends, how much the rod cushions fine tippet, the reel's drag strength and smoothness. Your rank counts everything you've earned, so spending never lowers it.
+- **Check the water (🪰).** Crouch at the edge to see which insects are on the surface (with a drawing and size), what's drifting underneath, and whether your fly matches.
+- **Learning.** A short guided tutorial on your first day (replay it from the field guide), and plain-language explanations of flies, hook sizes, leaders and tippet X numbers in the fly box and Rig panel.
+- **Wildlife and weather.** Songbirds sing from the trees and fly between them, dippers bob on the rocks, swallows hunt over the water, flocks pass overhead, and a deer wanders down to drink on the far bank. Rain showers roll in on some days, with rain on the water and on the leaves.
 - **Rises.** Rising trout send out rings, and the splash is louder the bigger the fish.
 - **Conditions.** Each day draws its own weather, water clarity and insect hatches (morning duns, small olives, hoppers, evening caddis, spinner fall), and the light changes from dawn mist to dusk. A rig that suits the water and the moment brings more takes and bigger fish, and is rated with ★ on the catch card.
 - **Rewards.** Points for spotting and catching, achievements, ranks and a logbook, all saved in your browser.
@@ -30,7 +34,7 @@ All the rules are plain JSON in `public/data/`, so you can tweak the game withou
 | `river.json` | River shape, sections, rocks, the stands on the bank, and every lie, with depth, description, fish sizes, trophy chance and snag risk |
 | `water.json` | How each leader, tippet, fly type and fly size scores in each kind of water, plus feeding activity through the day |
 | `conditions.json` | Weather, water clarity, insect hatches (time, size, chance per weather) and river-note texts |
-| `gear.json` | Tapered leaders, tippets (with breaking strength), slider ranges, and the flies in the fly box |
+| `gear.json` | Rods, reels and lines (stats, colours, prices), tapered leaders, tippets (with breaking strength), slider ranges, the flies in the fly box, and the beginner help texts |
 
 ## Code
 
@@ -40,6 +44,8 @@ All the rules are plain JSON in `public/data/`, so you can tweak the game withou
 - `public/js/tackle.js`: rod (bending under load), reel, the cast, the rope-simulated fly line, and the 3D flies.
 - `public/js/rig.js`, `public/js/flies.js`: the rig model, the fly box and leader builder, and the fly illustrations.
 - `public/js/fx.js`: rings, splashes, insects, rain, mist, the aim marker.
+- `public/js/wildlife.js`: birds, dippers, swallows, flocks and the deer.
+- `public/js/insects.js`, `public/js/tutorial.js`: the "Check the water" report and the guided tutorial.
 - `public/js/main.js`: game flow and UI.
 - `public/vendor/`: three.js r169 (MIT), bundled so the game needs no CDN.
 
