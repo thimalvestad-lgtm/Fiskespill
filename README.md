@@ -4,6 +4,8 @@ A slow, calm 3D fly fishing game. You stand on the bank of a trout stream (a fas
 
 Play it: https://fishing-game.thim-alvestad.workers.dev
 
+Pushes to `main` are deployed automatically by Cloudflare Workers Builds.
+
 ## How it plays
 
 - **Look and walk.** Drag to look around; zoom with the mouse wheel or the 🔍 button. Tap a circle on the minimap to walk to another stand on the bank.
