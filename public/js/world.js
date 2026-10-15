@@ -297,8 +297,8 @@ export class World {
         uSunColor: { value: new THREE.Color('#fff6e8') },
         uSky: { value: new THREE.Color('#5d8fd0') },
         uHorizon: { value: new THREE.Color('#cfe0ea') },
-        uShallow: { value: new THREE.Color('#6f8f74') },
-        uDeep: { value: new THREE.Color('#1d3d3c') },
+        uShallow: { value: new THREE.Color('#5cc0d6') },
+        uDeep: { value: new THREE.Color('#14608f') },
         uClarity: { value: 1 },
         uRain: { value: 0 },
         uLight: { value: 1 },
@@ -365,14 +365,31 @@ export class World {
           vec3 refl = mix(uHorizon, uSky, pow(clamp(R.y, 0.0, 1.0), 0.6));
           float depth = clamp(vDepth, 0.0, 3.0);
           vec3 body = mix(uShallow, uDeep, smoothstep(0.05, 1.7, depth));
-          body = mix(body, vec3(0.30, 0.34, 0.25), (1.0 - uClarity) * 0.4);
+          body = mix(body, vec3(0.30, 0.45, 0.42), (1.0 - uClarity) * 0.45);
+          // Cartoon banding: a couple of soft steps in brightness.
+          float lum = dot(body, vec3(0.3, 0.59, 0.11));
+          body *= mix(1.0, floor(lum * 6.0 + 0.5) / max(lum * 6.0, 0.001), 0.25);
           body *= uLight;
           float spec = pow(max(dot(R, uSunDir), 0.0), 220.0) * 2.5 + pow(max(dot(R, uSunDir), 0.0), 18.0) * 0.08;
-          vec2 fq = vec2(dot(p, side), dot(p, dir));
-          float fp = n(vec2(fq.x * 3.2, fq.y * 0.8 - uTime * vSpeed * 2.2)) * n(vec2(fq.x * 7.0, fq.y * 1.8 - uTime * vSpeed * 2.2 + 4.0));
+          // Surface patterns that travel with the current. Two phases blended
+          // so places with different speeds never shear the pattern apart.
+          float tp = uTime * 0.2;
+          float q0 = fract(tp), q1 = fract(tp + 0.5);
+          float qw = abs(q0 - 0.5) * 2.0;
+          vec2 a0 = p - dir * q0 * vSpeed * 5.0;
+          vec2 a1 = p - dir * q1 * vSpeed * 5.0 + vec2(7.3, 2.1);
+          float fp = mix(n(a0 * vec2(3.2, 0.8)) * n(a0 * vec2(7.0, 1.8) + 4.0), n(a1 * vec2(3.2, 0.8)) * n(a1 * vec2(7.0, 1.8) + 4.0), qw);
           float foam = smoothstep(0.55 - vFoam * 0.4, 0.95, fp * 1.6) * smoothstep(0.02, 0.25, vFoam);
           vec3 col = mix(body, refl, fres) + uSunColor * spec;
-          col = mix(col, vec3(0.93, 0.95, 0.93) * (0.6 + 0.4 * uLight), foam * 0.7);
+          // White streaks running with the current: the faster, the more.
+          float sl = mix(n(a0 * vec2(5.0, 0.35)) * n(a0 * vec2(11.0, 0.8) + 3.0), n(a1 * vec2(5.0, 0.35)) * n(a1 * vec2(11.0, 0.8) + 3.0), qw);
+          float streak = smoothstep(0.3, 0.48, sl) * smoothstep(0.25, 1.0, vSpeed) * 0.7;
+          // Lazy little flecks drifting on slow water.
+          float fl = mix(n(a0 * 9.0), n(a1 * 9.0), qw);
+          float fleck = smoothstep(0.8, 0.9, fl) * 0.3;
+          float white = clamp(foam * 0.85 + streak + fleck, 0.0, 1.0);
+          col = mix(col, vec3(0.95, 0.98, 1.0) * (0.6 + 0.4 * uLight), white);
+          foam = max(foam, white);
           float alpha = mix(0.3, 0.88 - 0.22 * uPolar, smoothstep(0.0, 1.9, depth));
           alpha = mix(alpha, 0.9, (1.0 - uClarity) * 0.8);
           alpha = max(alpha, max(fres * 0.95, foam));

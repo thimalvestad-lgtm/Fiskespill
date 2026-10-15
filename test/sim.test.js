@@ -75,3 +75,25 @@ test('big fish are pickier than small ones', async () => {
   const good = rig('9', '4X', 'nymph', 'large');
   assert.ok(fishTakeChance(s, good, ctx, 1, { length: 55 }, 0.4).p > big * 3);
 });
+
+test('a nymph has to reach the fish, and drag kills takes', async () => {
+  const { effectiveDepth } = await import('../public/js/sim.js');
+  const ctx = { water, day: day('overcast', 'clear'), minute: 600 };
+  const s = spot('pool-head'); // 1.8 m deep, fast tongue
+  const base = { leader: '9', tippet: '4X', fly: 'nymph', size: 'large' };
+  const shallow = { ...base, depthM: effectiveDepth({ ...base, indicatorFt: 2 }, 0.8) };
+  const deep = { ...base, depthM: effectiveDepth({ ...base, indicatorFt: 6.5 }, 0.8) };
+  assert.ok(evaluateRig(s, deep, ctx).match > evaluateRig(s, shallow, ctx).match * 2);
+  // A light midge gets swept up in fast water.
+  assert.ok(effectiveDepth({ fly: 'nymph', size: 'small', indicatorFt: 6 }, 1.2) < effectiveDepth({ fly: 'nymph', size: 'large', indicatorFt: 6 }, 1.2) * 0.7);
+  const dragged = evaluateRig(s, deep, { ...ctx, drag: 1 });
+  assert.ok(dragged.match < evaluateRig(s, deep, ctx).match * 0.3);
+});
+
+test('tippet thicker than the leader tip hurts the cast', () => {
+  const ctx = { water, day: day('overcast', 'clear'), minute: 600 };
+  const s = spot('riffle-seam');
+  const ok = evaluateRig(s, { leader: 10, tippet: '5X', fly: 'drydropper', size: 'medium' }, ctx);
+  const bad = evaluateRig(s, { leader: 10, tippet: '5X', fly: 'drydropper', size: 'medium', turnover: false }, ctx);
+  assert.ok(bad.match < ok.match * 0.75);
+});

@@ -70,20 +70,29 @@
     </div>
 
     <div class="bottombar" id="bottombar">
-      <button class="secondary flybox-btn" id="btn-flybox">
+      <button class="secondary gear-btn" id="btn-flybox">
         <span class="lbl">Fly box</span>
-        <span class="rig-summary" id="rig-summary"></span>
+        <span class="rig-summary" id="fly-summary"></span>
+      </button>
+      <button class="secondary gear-btn" id="btn-leader">
+        <span class="lbl">Leader</span>
+        <span class="rig-summary" id="leader-summary"></span>
       </button>
       <button class="primary" id="btn-cast" disabled>Cast</button>
       <button class="secondary" id="btn-rest" title="Let 20 minutes pass while you watch the water">Sit &amp; watch</button>
     </div>
 
-    <section class="flybox" id="flybox" hidden>
-      <div class="flybox-head"><h2>Fly box</h2><button class="close small" id="flybox-close" aria-label="Close">&times;</button></div>
-      <div class="rig-row"><label>Leader</label><div class="seg" id="seg-leader"></div></div>
-      <div class="rig-row"><label>Tippet</label><div class="seg" id="seg-tippet"></div></div>
-      <div class="rig-row"><label>Fly</label><div class="seg" id="seg-fly"></div></div>
-      <div class="rig-row"><label>Size</label><div class="seg" id="seg-size"></div></div>
+    <section class="sheet-panel flybox" id="flybox" hidden>
+      <div class="panel-head"><h2>Fly box</h2><button class="close small" data-hide="flybox" aria-label="Close">&times;</button></div>
+      <div class="box">
+        <div class="box-inner"></div>
+      </div>
+      <p class="box-note"></p>
+    </section>
+
+    <section class="sheet-panel leaderbox" id="leaderbox" hidden>
+      <div class="panel-head"><h2>Build your leader</h2><button class="close small" data-hide="leaderbox" aria-label="Close">&times;</button></div>
+      <div class="leader-body"></div>
       <p class="rig-note" id="rig-note">Changes are tied on before your next cast.</p>
     </section>
   </main>
@@ -101,7 +110,7 @@
           <li><b>Look around</b> by dragging; zoom with the mouse wheel or &#128269;. Tap a circle on the map to walk to another part of the bank.</li>
           <li><b>Spot fish</b>: tap a dark shape or a flash under the water, or a rise ring, for points. Spotted fish stay marked. Polarized glasses (&#128374;) cut the glare.</li>
           <li><b>Aim</b> by tapping the water. Land the fly a little <i>upstream</i> of a fish and let the current carry it over. A fly landing right on its head, or line falling across it, spooks the fish.</li>
-          <li><b>Rig up</b> in the Fly box: leader, tippet, dry fly, nymph or dry dropper, and size.</li>
+          <li><b>Rig up</b>: pick a fly from the <b>Fly box</b>, and build your <b>Leader</b>: a tapered leader, a tippet section, and the indicator depth or dropper length to suit the water.</li><li>While the fly drifts, <b>Mend</b> flips the line upstream so it doesn't drag the fly.</li>
           <li>When a fish takes, hit <b>Strike!</b> Then hold <b>Reel</b> and use the <b>drag</b> buttons to tighten or loosen.</li>
           <li>The better your rig suits the water and the conditions, the more often fish take, and the bigger they are.</li>
         </ul>

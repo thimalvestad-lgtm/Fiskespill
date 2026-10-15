@@ -241,6 +241,21 @@ export class Ambience {
     this.tone(t, pitch, pitch * 0.83, 0.025, vol, 0, 'square');
   }
 
+  // A fish rising: a soft sip for a small trout, a deep splash for a big one.
+  // size runs from about 0.2 (25 cm) to 1.5 (60 cm+).
+  rise(size, vol = 1, pan = 0) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const v = vol * (0.5 + size * 0.6);
+    this.burst(0.12 + size * 0.3, 'lowpass', 0.035 * v * (0.6 + size), [2200 - size * 600, 260]);
+    this.tone(t, 420 - size * 120, 880 - size * 300, 0.06 + size * 0.04, 0.03 * v, pan, 'sine');
+    if (size > 0.7) {
+      // The heavy "bloop" of a big fish turning down.
+      this.tone(t + 0.02, 160, 70, 0.22, 0.05 * v * size, pan, 'sine');
+      this.burst(0.35 + size * 0.2, 'bandpass', 0.03 * v, [900, 300]);
+    }
+  }
+
   // A trout sipping something off the surface.
   sip(vol = 1, pan = 0) {
     if (!this.ctx) return;

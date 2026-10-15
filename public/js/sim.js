@@ -74,10 +74,15 @@ export function evaluateRig(spot, rig, ctx) {
   const spookMul = 1 + (day.weather.spook * (lowLight ? 0.8 : 1) - 1) * wt.spookiness;
 
   // Leader: too short spooks fish (worse in bright light); too long loses control.
-  const bestLeader = bestKey(wt.leader, LEADERS);
-  let leader = wt.leader[rig.leader];
-  const leaderDir = LEADERS.indexOf(rig.leader) - LEADERS.indexOf(bestLeader);
+  // The leader can be any length (taper + tippet), so interpolate the table.
+  const feet = Number(rig.leader);
+  const bestFeet = Number(bestKey(wt.leader, LEADERS));
+  let leader = leaderScore(wt.leader, feet);
+  const leaderDir = feet < bestFeet - 0.75 ? -1 : feet > bestFeet + 0.75 ? 1 : 0;
   if (leaderDir < 0) leader = 1 - (1 - leader) * spookMul;
+  // Tippet thicker than the leader's tip: the leader won't turn over properly.
+  const badTurnover = rig.turnover === false;
+  if (badTurnover) leader *= 0.7;
 
   // Tippet: too thick shows (coloured water hides it); too thin costs control
   // and fighting strength.
@@ -114,20 +119,54 @@ export function evaluateRig(spot, rig, ctx) {
     size = wt.nymphSize[rig.size];
   }
 
+  // Depth: a nymph has to get down near the bottom where the fish are.
+  let depth = 1, depthRatio = null;
+  if (rig.fly !== 'dry' && rig.depthM !== undefined) {
+    const target = Math.max(0.25, parseFloat(spot.depth) * 0.85);
+    depthRatio = rig.depthM / target;
+    if (depthRatio < 0.8) depth = lerp(rig.fly === 'drydropper' ? 0.5 : 0.3, 1, clamp((depthRatio - 0.25) / 0.55, 0, 1));
+    else if (depthRatio > 1.3) depth = 0.85;
+  }
+
+  // Drift: a fly dragged across the current looks wrong to every trout.
+  const drift = clamp(1 - 0.8 * (ctx.drag ?? 0), 0.15, 1);
+
   leader = clamp(leader, 0.08, 1);
   tippet = clamp(tippet, 0.08, 1);
   fly = clamp(fly, 0.08, 1);
   size = clamp(size, 0.08, 1);
-  const match = leader * tippet * fly * size;
+  depth = clamp(depth, 0.08, 1);
+  const match = leader * tippet * fly * size * depth * drift;
 
   return {
     match,
-    factors: { leader, tippet, fly, size },
+    factors: { leader, tippet, fly, size, depth, drift },
     leaderDir,
     tippetDir,
+    depthRatio,
+    badTurnover,
     hatch,
     part,
   };
+}
+
+function leaderScore(table, feet) {
+  const keys = LEADERS.map(Number);
+  if (feet <= keys[0]) return table[LEADERS[0]] - (keys[0] - feet) * 0.08;
+  if (feet >= keys[keys.length - 1]) return table[LEADERS[LEADERS.length - 1]] - (feet - keys[keys.length - 1]) * 0.08;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (feet <= keys[i + 1]) return lerp(table[LEADERS[i]], table[LEADERS[i + 1]], (feet - keys[i]) / (keys[i + 1] - keys[i]));
+  }
+  return 0.5;
+}
+
+// How deep a nymph actually fishes (m), from the indicator depth or dropper
+// length (ft). Light flies get swept up by fast water; heavy ones get down.
+export function effectiveDepth(rig, speed) {
+  const ft = rig.fly === 'nymph' ? rig.indicatorFt : rig.dropperFt;
+  const sink = { small: 0.5, medium: 0.72, large: 0.95 }[rig.size] * (rig.fly === 'drydropper' ? 0.9 : 1);
+  const fast = clamp(speed, 0, 1.3) / 1.3;
+  return ft * 0.3048 * lerp(1, sink, fast) * 0.92;
 }
 
 export function spotActivity(spot, ctx) {
@@ -144,7 +183,7 @@ export function spotActivity(spot, ctx) {
 export function takeChance(spot, rig, ctx, freshness = 1) {
   const ev = evaluateRig(spot, rig, ctx);
   const act = spotActivity(spot, ctx);
-  const p = act * Math.pow(ev.match, 1.2) * 0.75 * (0.25 + 0.75 * freshness);
+  const p = act * Math.pow(ev.match, 1.3) * 0.6 * (0.2 + 0.8 * freshness);
   return { p: clamp(p, 0.01, 0.8), ev, activity: act };
 }
 
@@ -164,7 +203,7 @@ export function drawFish(spot, match, part, rng = Math.random) {
 
 export function catchPoints(fish, match) {
   const base = Math.round(fish.weightG / 10);
-  const bonus = match >= 0.8 ? 1.5 : match >= 0.55 ? 1.2 : 1;
+  const bonus = match >= 0.8 ? 2 : match >= 0.55 ? 1.35 : 1;
   return Math.round(base * bonus);
 }
 
@@ -184,6 +223,7 @@ export function missHint(spot, rig, ev) {
   const surface = rig.fly === 'dry' || rig.fly === 'drydropper';
   switch (worst) {
     case 'leader':
+      if (ev.badTurnover) return 'The tippet is thicker than the end of your leader, so the cast collapsed in a heap instead of turning over. Use tippet the same size as the leader tip, or finer.';
       return ev.leaderDir < 0
         ? 'The fly line landed too close to the fish. A shadow bolted for cover. A longer leader keeps it further away.'
         : 'The long leader crumpled in the tangled currents and the fly dragged unnaturally. A shorter leader would give you more control here.';
@@ -203,6 +243,14 @@ export function missHint(spot, rig, ev) {
       if (rig.size === 'large' && spot.type === 'flat') return 'The big fly landed with a plop that rippled across the whole flat.';
       if (rig.size === 'small') return 'The little fly was swept past before it got anywhere near the fish. Something heavier would sink faster.';
       return 'The fly drifted past without interest. Maybe a different size?';
+    case 'depth':
+      if (ev.depthRatio !== null && ev.depthRatio < 0.8)
+        return rig.fly === 'nymph'
+          ? 'Your nymph drifted well above the fish. Set the indicator further up the leader so the fly gets down near the bottom, or use a heavier nymph in fast water.'
+          : 'The dropper hung too high in the water. Lengthen the dropper tippet so the nymph reaches the fish.';
+      return 'The nymph kept ticking the stones. A little shallower would fish it cleaner.';
+    case 'drift':
+      return 'The fly skated across the current, dragged by the fly line. Trout refuse a dragging fly. Mend the line upstream to give the fly a free drift.';
   }
   return null;
 }
@@ -246,9 +294,9 @@ export function fishTakeChance(spot, rig, ctx, freshness, fish, dist) {
   const base = takeChance(spot, rig, ctx, freshness);
   const f = spot.fish;
   const big = clamp((fish.length - f.min) / (f.max - f.min), 0, 1.6);
-  const picky = Math.pow(base.ev.match, 1.4 * big);
+  const picky = Math.pow(base.ev.match, 1.9 * big);
   const wary = fish.wary ? 0.4 : 1;
-  return { p: clamp(base.p * 1.2 * picky * proximity(dist) * wary, 0, 0.85), ev: base.ev };
+  return { p: clamp(base.p * picky * proximity(dist) * wary, 0, 0.75), ev: base.ev };
 }
 
 export function spotPoints(length) {

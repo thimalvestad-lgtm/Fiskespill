@@ -96,6 +96,93 @@ export class Effects {
     this.markGeo = mGeo;
     this.marks = new Map();
     this.time = 0;
+
+    // Bubbles and foam clumps riding the current.
+    this.bubN = 700;
+    this.bubs = Array.from({ length: this.bubN }, () => ({ p: new THREE.Vector3(), life: 0, max: 1 }));
+    this.bubGeo = new THREE.BufferGeometry();
+    this.bubGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.bubN * 3), 3));
+    this.bubGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(this.bubN * 3), 3));
+    this.bubPts = new THREE.Points(this.bubGeo, new THREE.PointsMaterial({ size: 0.08, map: this.soft, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    this.bubPts.frustumCulled = false;
+    this.bubPts.renderOrder = 11;
+    scene.add(this.bubPts);
+    this.foamN = 160;
+    this.foams = Array.from({ length: this.foamN }, () => ({ p: new THREE.Vector3(), life: 0, max: 1 }));
+    this.foamGeo = new THREE.BufferGeometry();
+    this.foamGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(this.foamN * 3), 3));
+    this.foamPts = new THREE.Points(this.foamGeo, new THREE.PointsMaterial({ size: 0.32, map: this.soft, color: '#f4fbff', transparent: true, opacity: 0.6, depthWrite: false }));
+    this.foamPts.frustumCulled = false;
+    this.foamPts.renderOrder = 11;
+    scene.add(this.foamPts);
+    this.pending = [];
+  }
+
+  setWorld(world) {
+    this.world = world;
+  }
+
+  // Rise rings: a few concentric waves spreading out, bigger for bigger fish.
+  riseWaves(x, z, size) {
+    const n = size > 0.9 ? 4 : 3;
+    for (let i = 0; i < n; i++) this.pending.push({ at: this.time + i * 0.28, x, z, size: size * (1 - i * 0.18), life: 2.4 + size });
+  }
+
+  spawnFloater(b, camPos, foam) {
+    const w = this.world;
+    for (let k = 0; k < 6; k++) {
+      const a = Math.random() * Math.PI * 2, r = 3 + Math.random() * 34;
+      const x = camPos.x + Math.cos(a) * r, z = camPos.z + Math.sin(a) * r;
+      if (!w.inWater(x, z)) continue;
+      const f = w.flowAt(x, z);
+      const fm = w.foamAt(x, z);
+      const want = foam ? fm * 1.3 : fm * 0.9 + Math.max(0, f.speed - 0.3) * 0.7;
+      if (Math.random() > want) continue;
+      b.p.set(x, 0.02, z);
+      b.max = foam ? 6 + Math.random() * 8 : 1.5 + Math.random() * 3.5;
+      b.life = b.max;
+      return;
+    }
+    b.life = 0;
+  }
+
+  updateFloaters(dt, camPos) {
+    const w = this.world;
+    const bp = this.bubGeo.attributes.position, bc = this.bubGeo.attributes.color;
+    let spawned = 0;
+    for (let i = 0; i < this.bubN; i++) {
+      const b = this.bubs[i];
+      if (b.life <= 0) {
+        if (spawned < 25) { this.spawnFloater(b, camPos, false); spawned++; }
+        if (b.life <= 0) { bp.setXYZ(i, 0, -50, 0); continue; }
+      }
+      b.life -= dt;
+      const f = w.flowAt(b.p.x, b.p.z);
+      b.p.x += f.vx * dt + (Math.random() - 0.5) * dt * 0.3;
+      b.p.z += f.vz * dt + (Math.random() - 0.5) * dt * 0.3;
+      if (!w.inWater(b.p.x, b.p.z)) b.life = 0;
+      const k = Math.min(1, b.life / 0.5, (b.max - b.life) / 0.3);
+      bp.setXYZ(i, b.p.x, 0.02, b.p.z);
+      bc.setXYZ(i, k * 0.9, k * 0.95, k);
+    }
+    bp.needsUpdate = true;
+    bc.needsUpdate = true;
+    const fp = this.foamGeo.attributes.position;
+    let fs = 0;
+    for (let i = 0; i < this.foamN; i++) {
+      const b = this.foams[i];
+      if (b.life <= 0) {
+        if (fs < 6) { this.spawnFloater(b, camPos, true); fs++; }
+        if (b.life <= 0) { fp.setXYZ(i, 0, -50, 0); continue; }
+      }
+      b.life -= dt;
+      const f = w.flowAt(b.p.x, b.p.z);
+      b.p.x += f.vx * dt * 0.9;
+      b.p.z += f.vz * dt * 0.9;
+      if (!w.inWater(b.p.x, b.p.z)) b.life = 0;
+      fp.setXYZ(i, b.p.x, 0.018, b.p.z);
+    }
+    fp.needsUpdate = true;
   }
 
   ring(x, z, size = 0.8, life = 2.2) {
@@ -152,6 +239,14 @@ export class Effects {
   update(dt, camPos, { hatch, rain, mist, minute }) {
     this.time += dt;
     const t = this.time;
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const q = this.pending[i];
+      if (t >= q.at) {
+        this.ring(q.x, q.z, q.size, q.life);
+        this.pending.splice(i, 1);
+      }
+    }
+    if (this.world) this.updateFloaters(dt, camPos);
     for (const r of this.rings) {
       if (!r.m.visible) continue;
       r.age += dt;
@@ -159,7 +254,7 @@ export class Effects {
       if (k >= 1) { r.m.visible = false; continue; }
       const s = 0.05 + Math.pow(k, 0.55) * r.size;
       r.m.scale.set(s, 1, s);
-      r.m.material.opacity = (1 - k) * 0.55;
+      r.m.material.opacity = (1 - k) * 0.7;
     }
 
     // Droplets.

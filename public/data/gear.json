@@ -1,20 +1,37 @@
 {
+  "_about": "Tackle. A rig is a tapered leader, an optional tippet section, and a fly. Nymphs hang below an indicator; dry droppers hang a nymph below a dry fly. Lengths are in feet.",
   "leaders": [
-    { "id": "7.5", "label": "7.5 ft", "note": "Short and easy to control. Lands close and splashy." },
-    { "id": "9", "label": "9 ft", "note": "The all-rounder." },
-    { "id": "12", "label": "12 ft", "note": "Keeps the fly line away from wary fish." },
-    { "id": "15", "label": "15 ft", "note": "Long and delicate. Hard to manage in broken water." }
+    { "id": "7.5-3X", "feet": 7.5, "tip": "3X", "label": "7.5 ft · 3X", "note": "Short and stout. Turns over heavy flies in pocket water." },
+    { "id": "7.5-4X", "feet": 7.5, "tip": "4X", "label": "7.5 ft · 4X", "note": "Short, for close work in broken water." },
+    { "id": "9-4X", "feet": 9, "tip": "4X", "label": "9 ft · 4X", "note": "The workhorse for nymphs and dry droppers." },
+    { "id": "9-5X", "feet": 9, "tip": "5X", "label": "9 ft · 5X", "note": "The all-rounder for dries." },
+    { "id": "12-5X", "feet": 12, "tip": "5X", "label": "12 ft · 5X", "note": "Long, for clear water and wary fish." },
+    { "id": "12-6X", "feet": 12, "tip": "6X", "label": "12 ft · 6X", "note": "Long and delicate, for flat water and tiny flies." }
   ],
   "tippets": [
-    { "id": "3X", "label": "3X · 0.20 mm", "strengthKg": 3.6, "note": "Strong. Easy to see in clear water." },
-    { "id": "4X", "label": "4X · 0.18 mm", "strengthKg": 2.7, "note": "Sturdy. Good with heavier flies." },
-    { "id": "5X", "label": "5X · 0.15 mm", "strengthKg": 2.0, "note": "A fine all-round tippet." },
-    { "id": "6X", "label": "6X · 0.13 mm", "strengthKg": 1.4, "note": "Nearly invisible. Easy to break." }
+    { "id": "3X", "label": "3X", "mm": 0.2, "strengthKg": 3.6, "note": "Strong. Easy to see in clear water." },
+    { "id": "4X", "label": "4X", "mm": 0.18, "strengthKg": 2.7, "note": "Sturdy. Good with heavier flies." },
+    { "id": "5X", "label": "5X", "mm": 0.15, "strengthKg": 2.0, "note": "A fine all-round tippet." },
+    { "id": "6X", "label": "6X", "mm": 0.13, "strengthKg": 1.4, "note": "Nearly invisible. Easy to break." }
+  ],
+  "tippetLength": { "min": 0, "max": 4, "step": 0.5 },
+  "indicatorDepth": { "min": 1, "max": 8, "step": 0.5 },
+  "dropperLength": { "min": 0.5, "max": 4, "step": 0.25 },
+  "flies": [
+    { "id": "adams", "type": "dry", "size": "small", "hook": "#18", "name": "Parachute Adams", "note": "A small grey mayfly. The classic match for olives and spinners." },
+    { "id": "caddis", "type": "dry", "size": "medium", "hook": "#14", "name": "Elk Hair Caddis", "note": "A buoyant, medium all-rounder. Duns and evening caddis." },
+    { "id": "hopper", "type": "dry", "size": "large", "hook": "#10", "name": "Foam Hopper", "note": "A big grasshopper. Lands with a plop near the bank on summer afternoons." },
+    { "id": "zebra", "type": "nymph", "size": "small", "hook": "#18", "name": "Zebra Midge", "note": "Tiny and slim. Sinks slowly; best in slow, clear water." },
+    { "id": "pt", "type": "nymph", "size": "medium", "hook": "#14", "name": "Pheasant Tail", "note": "The nymph everything eats. Bead-head, sinks steadily." },
+    { "id": "stone", "type": "nymph", "size": "large", "hook": "#10", "name": "Tungsten Stonefly", "note": "Big and heavy. Gets down fast in deep, fast water." },
+    { "id": "dd-small", "type": "drydropper", "size": "small", "hook": "#18", "name": "Adams + Zebra Midge", "note": "Delicate pair for slow seams and the flat." },
+    { "id": "dd-medium", "type": "drydropper", "size": "medium", "hook": "#14", "name": "Caddis + Pheasant Tail", "note": "The go-to pair for riffles and seams." },
+    { "id": "dd-large", "type": "drydropper", "size": "large", "hook": "#10", "name": "Hopper + Stonefly", "note": "A big buoyant hopper holding up a heavy nymph. Banks and pockets." }
   ],
   "flyTypes": [
-    { "id": "dry", "label": "Dry fly", "note": "Floats on the surface, for fish that are looking up." },
-    { "id": "nymph", "label": "Nymph", "note": "Sinks to the bottom, where trout do most of their feeding." },
-    { "id": "drydropper", "label": "Dry dropper", "note": "A dry with a small nymph hung under it. Fishes two depths at once." }
+    { "id": "dry", "label": "Dry flies", "note": "Float on the surface, for fish that are looking up." },
+    { "id": "nymph", "label": "Nymphs", "note": "Fished under an indicator, near the bottom where trout do most of their feeding." },
+    { "id": "drydropper", "label": "Dry droppers", "note": "A dry with a nymph hung under it. Fishes two depths at once." }
   ],
   "flySizes": [
     { "id": "small", "label": "Small #18", "rank": 0 },

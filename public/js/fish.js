@@ -185,10 +185,15 @@ export class Fish {
     this.state = 'gone';
   }
 
+  // Back from hiding: the fish swims in from downstream and settles into its lie.
   returnHome() {
     this.hidden = false;
-    this.state = 'hold';
-    this.pos.copy(this.home);
+    this.state = 'returning';
+    this.fadeIn = 0;
+    const f = this.world.flowAt(this.home.x, this.home.z);
+    const sp = Math.hypot(f.vx, f.vz) || 1;
+    this.pos.set(this.home.x + (f.vx / sp) * 2.5, this.home.y - 0.15, this.home.z + (f.vz / sp) * 2.5);
+    if (!this.world.inWater(this.pos.x, this.pos.z)) this.pos.copy(this.home);
     this.pitch = 0;
     this.roll = 0;
     this.faceCurrent(true);
@@ -267,7 +272,7 @@ export class Fish {
         tailSpeed = 9;
         break;
       case 'returning': {
-        this.pos.lerp(this.home, Math.min(1, dt * 1.6));
+        this.pos.lerp(this.home, Math.min(1, dt * (this.fadeIn !== undefined && this.fadeIn < 1 ? 0.6 : 1.6)));
         this.faceCurrent(false);
         this.pitch = lerp(this.pitch || 0, -0.2, dt * 4);
         if (this.pos.distanceTo(this.home) < 0.05) this.state = 'hold';
@@ -316,6 +321,10 @@ export class Fish {
     const surfaceBoost = clamp(1 - (-this.pos.y) / 0.6, 0, 1);
     let opacity = this.hidden ? 0 : clamp(0.22 + this.vis * 0.8 + surfaceBoost * 0.5, 0, 0.97);
     if (this.state === 'spooked') opacity *= 1 - clamp((this.t - 0.8) / 0.8, 0, 1);
+    if (this.fadeIn !== undefined && this.fadeIn < 1) {
+      this.fadeIn = Math.min(1, this.fadeIn + dt / 2.5);
+      opacity *= this.fadeIn;
+    }
     if (this.state === 'released') opacity *= 1 - clamp((this.t - 1.5) / 1, 0, 1);
     this.mat.opacity = opacity;
     this.finMat.opacity = opacity * 0.8;
