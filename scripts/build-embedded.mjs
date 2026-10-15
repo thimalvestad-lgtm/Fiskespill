@@ -18,6 +18,11 @@ const files = {};
   }
 })(root);
 
+// A short content hash per file, so browsers can revalidate cheaply and never
+// mix an old script with a new page.
+import { createHash } from 'node:crypto';
+for (const k of Object.keys(files)) files[k].push(createHash('sha1').update(files[k][1]).digest('hex').slice(0, 16));
+
 const src = `const FILES = ${JSON.stringify(files)};
 export default {
   fetch(request) {
@@ -25,7 +30,10 @@ export default {
     if (path.endsWith('/')) path += 'index.html';
     const f = FILES[path];
     if (!f) return new Response('Not found', { status: 404 });
-    return new Response(f[1], { headers: { 'content-type': f[0], 'cache-control': 'public, max-age=300' } });
+    const etag = '"' + f[2] + '"';
+    const headers = { 'content-type': f[0], 'cache-control': 'no-cache', etag };
+    if (request.headers.get('if-none-match') === etag) return new Response(null, { status: 304, headers });
+    return new Response(f[1], { headers });
   },
 };
 `;
