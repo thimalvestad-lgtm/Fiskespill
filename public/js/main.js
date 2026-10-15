@@ -828,6 +828,13 @@ function startFight(d, f) {
     t: 0,
     jumps: 0,
     jumpCool: rand(1.5, 4),
+    // The first seconds after the hook-set: the fish shakes its head while
+    // you get your bearings and set the drag. No runs, no snapping yet.
+    grace: 2.5,
+    runWarn: null,
+    runT: 0,
+    strainT: 0,
+    landing: null,
     mouth: new THREE.Vector3(),
   };
   save.drag = Math.min(save.drag, gearNow().reel.maxDrag);
@@ -840,7 +847,18 @@ function startFight(d, f) {
   audio.splash(Math.min(1.4, 0.4 + f.kg));
   fx.splash(f.pos.x, 0, f.pos.z, 25, 0.8 + f.kg * 0.2);
   fx.ring(f.pos.x, f.pos.z, 1.2, 1.4);
-  if (f.kg > 0.7) startRun();
+  $('net').hidden = true;
+  if (f.kg > 0.7) fight.firstRun = true;
+}
+
+// A run is telegraphed: the fish turns, its tail thumps the rod, and a moment
+// later it takes off. That moment is your time to ease the drag.
+function queueRun(reason) {
+  const F = fight;
+  if (F.running || F.runWarn || F.jump) return;
+  F.runWarn = { t: 0, dur: rand(0.9, 1.4), kickT: 0 };
+  $('fight-title').textContent = reason || 'It\u2019s turning to run...';
+  $('fight').classList.add('runwarn');
 }
 
 function startRun() {
@@ -865,7 +883,10 @@ function startRun() {
       fight.toCover = true;
     }
   }
-  fight.speed = 1.4 + f.kg * 0.9;
+  fight.speed = 1.2 + f.kg * 0.75;
+  fight.runT = 0;
+  fight.runWarn = null;
+  $('fight').classList.remove('runwarn');
   $('fight-title').textContent = fight.toCover ? 'It’s heading for cover!' : 'It’s running!';
 }
 
@@ -984,7 +1005,7 @@ function updateDragUI() {
 }
 
 function setDrag(delta) {
-  save.drag = clamp(save.drag + delta, 1, gearNow().reel.maxDrag);
+  save.drag = clamp(Math.round((save.drag + delta) * 2) / 2, 0.5, gearNow().reel.maxDrag);
   persist();
   audio.click(900 + save.drag * 150, 0.04);
   updateDragUI();
@@ -995,9 +1016,24 @@ function updateFight(dt) {
   const f = F.fish;
   const drag = dragKg();
   F.t += dt;
+  F.grace = Math.max(0, F.grace - dt);
 
-  if (!F.running && Math.random() < dt * (0.12 + 0.35 * F.stamina) * Math.min(1.5, 0.5 + f.kg)) startRun();
+  if (F.grace <= 0 && F.firstRun) { F.firstRun = false; queueRun(); }
+  if (F.grace <= 0 && !F.running && !F.landing && Math.random() < dt * (0.05 + 0.17 * F.stamina) * Math.min(1.5, 0.5 + f.kg) * (F.stamina < 0.35 ? 0.25 : 1)) queueRun();
+  if (F.runWarn) {
+    F.runWarn.t += dt;
+    F.runWarn.kickT -= dt;
+    if (F.runWarn.kickT <= 0) {
+      // Tail kicks: the rod tip nods and the water swirls.
+      F.runWarn.kickT = 0.28;
+      fx.ring(f.pos.x, f.pos.z, 0.5, 0.8);
+      audio.click(700, 0.03);
+      tension.value = Math.min(1.5, tension.value + 0.15);
+    }
+    if (F.runWarn.t >= F.runWarn.dur) startRun();
+  }
   if (F.running) {
+    F.runT += dt;
     F.runLeft -= dt;
     if (F.runLeft <= 0) {
       F.running = false;
@@ -1022,7 +1058,9 @@ function updateFight(dt) {
     f.pos.z = next.z;
   }
 
-  const pull = f.kg * 0.9 * (F.running ? 1.9 : 1) * (0.4 + 0.6 * F.stamina);
+  // A run builds over a second rather than hitting the tippet all at once.
+  const surge = F.running ? 1 + 0.8 * Math.min(1, F.runT / 1) : 1;
+  const pull = f.kg * 0.9 * surge * (0.4 + 0.6 * F.stamina) * (F.grace > 0 ? 0.7 : 1);
   // Cranking: every tap of Reel winds in a turn of line; holding it winds slowly.
   if (holding) {
     F.autoCrankT -= dt;
@@ -1033,7 +1071,8 @@ function updateFight(dt) {
   let wound = 0;
   if (F.crankQ > 0) {
     if (pull <= drag && !bowing) {
-      wound = Math.min(F.crankQ, dt * 2.4);
+      // A tired fish comes in easily.
+      wound = Math.min(F.crankQ, dt * 2.4) * (F.stamina < 0.35 ? 1.6 : 1);
       F.lineOut -= wound;
       F.crankQ -= wound;
     } else {
@@ -1064,6 +1103,7 @@ function updateFight(dt) {
   const effLine = F.lineOut + (bowing ? 1.4 : 0); // bowing drops the rod and gives slack
   const dist = Math.hypot(f.pos.x - F.foot.x, f.pos.z - F.foot.z);
   let given = 0, t;
+  F.slackM = 0;
   if (dist > effLine && bowing) {
     // Bowing: line slides out without much resistance.
     given = dist - effLine;
@@ -1086,20 +1126,32 @@ function updateFight(dt) {
     F.slackT = 0;
   } else {
     const slack = effLine - dist;
+    F.slackM = slack;
     t = slack > 0.6 ? 0.05 : pull * 0.6 + (cranking ? 0.3 : 0);
     if (bowing) t = Math.min(t, 0.08);
-    if (slack > 2.5) F.slackT += dt;
+    if (slack > 2.5 && !F.landing) F.slackT += dt;
     else F.slackT = 0;
   }
   // A rough drag stutters as line goes out, putting spikes on the tippet.
   if (given > 0) t *= 1 + (1 - gearNow().reel.smooth) * (Math.random() * 0.9);
-  F.tensionKg = lerp(F.tensionKg, t, Math.min(1, dt * 8));
+  F.tensionKg = lerp(F.tensionKg, t, Math.min(1, dt * 5));
   const ratio = F.tensionKg / F.strength;
   tension.value = F.tensionKg / 2.2;
 
-  F.stamina = Math.max(0, F.stamina - dt * (0.03 + F.tensionKg * 0.05 + (F.running ? 0.03 : 0) + Math.abs(F.rodSide) * 0.02) / (0.5 + f.kg * 0.5));
-  if (ratio > 0.92) F.over += dt;
-  else F.over = Math.max(0, F.over - dt * 1.5);
+  F.stamina = Math.max(0, F.stamina - dt * (0.05 + F.tensionKg * 0.08 + (F.running ? 0.03 : 0) + Math.abs(F.rodSide) * 0.02) / (0.5 + f.kg * 0.5));
+  // The tippet stretches before it breaks: it takes a second or so of
+  // overload, and the line creaks and the panel warns you meanwhile.
+  if (F.grace > 0) F.over = 0;
+  else if (ratio > 0.95) F.over += dt * clamp((ratio - 0.95) * 6 + 0.6, 0.6, 1.6);
+  else F.over = Math.max(0, F.over - dt * 1.2);
+  const straining = ratio > 0.85 && !F.jump;
+  $('fight').classList.toggle('strain', straining);
+  F.strainT -= dt;
+  if (straining && F.strainT <= 0) {
+    audio.strain(ratio);
+    F.strainT = 0.35;
+    if (!F.warn && !F.runWarn) $('fight-title').textContent = 'The line is straining! Ease the drag!';
+  }
   if (F.running && F.toCover && given > 0 && f.spot.snag > 0.3) F.snag += given * f.spot.snag * 0.14;
   else F.snag = Math.max(0, F.snag - dt * 0.05);
 
@@ -1125,7 +1177,7 @@ function updateFight(dt) {
   // sometimes one last leap when they're drawn close to the bank.
   F.jumpCool -= dt;
   let jumpRate = 0;
-  if (F.jumpCool <= 0 && F.jumps < 5) {
+  if (F.jumpCool <= 0 && F.jumps < 5 && F.grace <= 0 && !F.landing) {
     const sp = f.species === 'rainbow' ? 1 : 0.35;
     const size = f.length > 48 ? 0.7 : 1; // big old browns tend to bore deep instead
     if (F.running) jumpRate += 0.32 * sp * size * (0.3 + F.stamina);
@@ -1208,11 +1260,69 @@ function updateFight(dt) {
   $('side-dot').style.left = `${50 + F.rodSide * 45}%`;
   $('tension-bar').classList.toggle('danger', ratio > 0.8);
 
-  if (F.over > 0.3) return endFight('snap');
+  if (F.over > 1.1) return endFight('snap');
   if (F.snag > 1) return endFight('snag');
-  if (F.slackT > 3) return endFight('slack');
-  if (dist < 3 && F.stamina < 0.35) return endFight('landed');
-  if (dist < 3 && !F.running) startRun();
+  if (F.slackT > 5) return endFight('slack');
+  updateLanding(dt, dist, ratio);
+  if (!F.landing && dist < 3 && !F.running && F.stamina >= 0.35) queueRun('It sees you! It\u2019s turning away...');
+}
+
+// Landing: a tired fish close in comes up to the surface. Keep the line
+// gently tight to lead its head up, and tap Net when it slides in. Too much
+// slack or too much pull and it finds a last burst of energy.
+function updateLanding(dt, dist, ratio) {
+  const F = fight;
+  const f = F.fish;
+  if (!F.landing) {
+    if (dist < 4.5 && F.stamina < 0.35 && !F.running && !F.runWarn && !F.jump && !F.warn) {
+      F.landing = { t: 0, ready: 0 };
+      $('net').hidden = false;
+      $('fight').classList.add('landing');
+      $('fight-title').textContent = 'It\u2019s tiring. Lead it in and get the net ready...';
+    }
+    return;
+  }
+  const L = F.landing;
+  L.t += dt;
+  // The fish rolls on its side and comes up when the line is gently tight.
+  const tight = F.slackM < 0.6 && !bowing;
+  const good = tight && ratio < 0.8;
+  L.ready = clamp(L.ready + (good ? dt * 1.1 : -dt * 0.3), 0, 1);
+  // A beaten fish hangs in the current rather than swimming at you.
+  F.speed = Math.min(F.speed, 0.15);
+  f.pos.y = lerp(f.pos.y, -0.08, dt * 2);
+  f.roll = lerp(f.roll || 0, L.ready * 0.6, dt * 2);
+  $('net').classList.toggle('ready', L.ready >= 1);
+  $('net-fill').style.width = `${L.ready * 100}%`;
+  if (L.ready >= 1) $('fight-title').textContent = 'Its head is up! Net it!';
+  else if (!tight) $('fight-title').textContent = 'Keep the line tight, reel a little...';
+  else if (ratio >= 0.8) $('fight-title').textContent = 'Too much pull, ease off a little...';
+  else $('fight-title').textContent = 'Lead it in... nearly there...';
+  if (F.running || dist > 6.5) endLanding();
+}
+
+function endLanding() {
+  const F = fight;
+  if (!F || !F.landing) return;
+  F.landing = null;
+  F.fish.roll = 0;
+  $('net').hidden = true;
+  $('net').classList.remove('ready');
+  $('fight').classList.remove('landing');
+}
+
+function tryNet() {
+  const F = fight;
+  if (!F || !F.landing) return;
+  if (F.landing.ready >= 1) return endFight('landed');
+  // Too early: the net spooks it into one more short run.
+  toast('Too soon! The fish saw the net and bolted. Lead its head up first.', 3000);
+  fx.splash(F.fish.pos.x, 0, F.fish.pos.z, 12, 0.6);
+  audio.splash(0.5);
+  F.stamina = Math.min(1, F.stamina + 0.12);
+  endLanding();
+  startRun();
+  F.runLeft = rand(0.8, 1.5);
 }
 
 function endFight(outcome) {
@@ -1220,7 +1330,9 @@ function endFight(outcome) {
   fight = null;
   holding = false;
   $('fight').hidden = true;
-  $('fight').classList.remove('jumping', 'warning');
+  $('fight').classList.remove('jumping', 'warning', 'runwarn', 'strain', 'landing');
+  $('net').hidden = true;
+  $('net').classList.remove('ready');
   $('jump-cue').hidden = true;
   bowing = false;
   tackle.rodSide = 0;
@@ -1524,8 +1636,9 @@ function bindEvents() {
       else if (state.phase === 'strike') doStrike();
       else if (state.phase === 'idle' || state.phase === 'drift') cast();
     }
-    if (state.phase === 'fight' && (e.code === 'ArrowUp' || e.code === 'KeyW')) { setDrag(1); e.preventDefault(); }
-    if (state.phase === 'fight' && (e.code === 'ArrowDown' || e.code === 'KeyS')) { setDrag(-1); e.preventDefault(); }
+    if (state.phase === 'fight' && (e.code === 'ArrowUp' || e.code === 'KeyW')) { setDrag(0.5); e.preventDefault(); }
+    if (state.phase === 'fight' && (e.code === 'ArrowDown' || e.code === 'KeyS')) { setDrag(-0.5); e.preventDefault(); }
+    if (state.phase === 'fight' && (e.code === 'KeyN' || e.code === 'Enter')) { tryNet(); e.preventDefault(); }
     if (e.code === 'KeyM') mend();
     if (state.phase === 'fight') {
       if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { setBow(true); e.preventDefault(); }
@@ -1563,8 +1676,21 @@ function bindEvents() {
   reel.addEventListener('pointerup', () => { holding = false; reel.classList.remove('on'); });
   reel.addEventListener('pointerleave', () => { holding = false; reel.classList.remove('on'); });
   reel.addEventListener('contextmenu', (e) => e.preventDefault());
-  $('drag-up').addEventListener('click', () => setDrag(1));
-  $('drag-down').addEventListener('click', () => setDrag(-1));
+  // Drag buttons repeat while held, so you can wind it quickly in a pinch.
+  for (const [id, d] of [['drag-up', 0.5], ['drag-down', -0.5]]) {
+    const b = $(id);
+    let rep = null;
+    const stop = () => { clearTimeout(rep); rep = null; };
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      setDrag(d);
+      const again = (ms) => { rep = setTimeout(() => { setDrag(d); again(110); }, ms); };
+      again(380);
+    });
+    for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, stop);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+  $('net').addEventListener('click', tryNet);
   $('btn-start').addEventListener('click', () => {
     $('intro').hidden = true;
     if ($('tut-check').checked && !tutorial.active) setTimeout(() => tutorial.start(), 600);
@@ -1672,6 +1798,7 @@ window.__game = {
   get fishes() { return fishes; },
   get fight() { return fight; },
   get drift() { return drift; },
+  hook: (i) => { const f = fishes[i]; state.phase = 'drift'; startFight({ ev: { match: 0.7 } }, f); },
   screenOf: (x, y, z) => screenOf(new THREE.Vector3(x, y, z)),
   setView: (y, p) => { if (y !== undefined) yaw = y; if (p !== undefined) pitch = p; },
   nudge: (dy, p) => { yaw += dy; pitch = p; },

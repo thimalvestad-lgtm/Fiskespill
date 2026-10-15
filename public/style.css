@@ -498,3 +498,21 @@ kbd { background: rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 0 4px;
 }
 .link-btn { display: block; margin: 10px auto 0; background: none; border: 0; color: var(--accent, #2f6f8f); font: inherit; font-size: 13.5px; font-weight: 600; text-decoration: underline; cursor: pointer; }
 .link-btn[hidden] { display: none; }
+
+/* Fight: run warning, strain, landing net */
+.fight.runwarn { box-shadow: 0 0 0 3px #9ec9d6, 0 8px 30px rgba(0, 0, 0, 0.4); }
+.fight.runwarn .drag-btn#drag-down { animation: bowpulse 0.35s infinite alternate; }
+.fight.strain { box-shadow: 0 0 0 3px #e06a4a, 0 8px 30px rgba(0, 0, 0, 0.4); }
+.fight.strain .drag-btn#drag-down { animation: bowpulse 0.25s infinite alternate; background: rgba(224, 106, 74, 0.45); }
+.drag-btn { touch-action: none; user-select: none; -webkit-user-select: none; }
+.net {
+  position: relative; overflow: hidden; width: 100%; margin-top: 8px;
+  padding: 10px 8px; border-radius: 14px; border: 2px solid #8fbf7a;
+  background: rgba(143, 191, 122, 0.15); color: #fff; font-weight: 700; font-size: 17px;
+}
+.net[hidden] { display: none; }
+.net-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: rgba(143, 191, 122, 0.45); transition: width 0.1s linear; }
+.net-lbl { position: relative; display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.net small { font-size: 10.5px; font-weight: 600; opacity: 0.75; margin-top: 2px; }
+.net.ready { background: #8fbf7a; color: #15301a; animation: bowpulse 0.4s infinite alternate; }
+.net-row { display: inline-flex; align-items: center; gap: 6px; }

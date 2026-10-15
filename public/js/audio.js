@@ -306,6 +306,14 @@ export class Ambience {
     [523, 659, 784, 1046].forEach((f, i) => this.tone(t + i * 0.12, f, f, 0.9, 0.05, 0, 'sine'));
   }
 
+  // The line creaking under strain: a low, tight groan that rises with load.
+  strain(load = 1) {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const f = 140 + (load - 0.85) * 600;
+    this.tone(t, f, f * 1.15, 0.22, 0.03 + (load - 0.85) * 0.08, 0, 'sawtooth');
+  }
+
   snap() {
     this.burst(0.08, 'highpass', 0.15, [3000, 2000]);
   }
