@@ -104,10 +104,11 @@ export class Fish {
     const dorsal = new THREE.Mesh(geos.fin, this.finMat);
     dorsal.position.set(0, 0.095, -0.08);
     this.group.add(this.body, this.tail, dorsal);
-    this.group.scale.setScalar(L);
+    // A touch larger than life, cartoon-style, so fish read at 20 m.
+    this.group.scale.setScalar(L * 1.3);
     this.shadowMat = new THREE.MeshBasicMaterial({ color: '#0b1410', transparent: true, opacity: 0.2, depthWrite: false });
     this.shadow = new THREE.Mesh(shadowGeo, this.shadowMat);
-    this.shadow.scale.set(L * 0.09, 1, L * 0.42);
+    this.shadow.scale.set(L * 0.12, 1, L * 0.55);
     world.scene.add(this.group, this.shadow);
     this.faceCurrent(true);
     this.place();
@@ -340,7 +341,7 @@ export class Fish {
     const clarity = ctx.clarity === 'tinged' ? 0.45 : 1;
     const depth = Math.exp(-Math.max(0, -this.pos.y) * 0.75);
     const dist = clamp(1 - (ctx.distance - 8) / 30, 0.2, 1);
-    const polar = ctx.polarized ? 1.35 : 0.75;
+    const polar = ctx.polarized ? 2.1 : 0.6;
     return clamp(surface * clarity * ctx.light * depth * dist * 1.25 * polar + this.flash * 0.45, 0, 1);
   }
 }

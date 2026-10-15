@@ -16,6 +16,7 @@ const ROD_LEN = 2.75; // 9 ft
 const SEGS = 16;
 const SIDES = 6;
 const LINE_PTS = 56;
+const RENDER_PTS = 166; // the line is drawn as a smooth curve through the sim points
 const WATER_Y = 0.012;
 
 function bezier(a, b, c, t, out) {
@@ -181,11 +182,15 @@ export class Tackle {
     this.lineGeo.setPositions(this.linePts);
     const colors = [];
     const fl = new THREE.Color('#ecd877'), ld = new THREE.Color('#d9e2dc');
-    for (let i = 0; i < LINE_PTS; i++) {
-      const c = i / (LINE_PTS - 1) < 0.8 ? fl : ld;
+    this.renderPts = new Float32Array(RENDER_PTS * 3);
+    this.lineGeo.setPositions(this.renderPts);
+    for (let i = 0; i < RENDER_PTS; i++) {
+      const c = i / (RENDER_PTS - 1) < 0.8 ? fl : ld;
       colors.push(c.r, c.g, c.b);
     }
     this.lineGeo.setColors(colors);
+    this.curvePts = Array.from({ length: LINE_PTS }, () => new THREE.Vector3());
+    this.curve = new THREE.CatmullRomCurve3(this.curvePts, false, 'centripetal');
     this.lineMat = new LineMaterial({ linewidth: 2.4, vertexColors: true, transparent: true, opacity: 0.95, worldUnits: false });
     this.line = new Line2(this.lineGeo, this.lineMat);
     this.line.frustumCulled = false;
@@ -280,21 +285,13 @@ export class Tackle {
     this.flyPos.copy(P[LINE_PTS - 1]);
   }
 
-  // Lift the belly of the line and lay it back upstream.
+  // A mend: a flick of the rod lifts the belly off the water and throws it
+  // upstream. The line then falls back under gravity in soft curves, and
+  // the fly (and the last bit of leader) stays where it is.
   mend() {
     if (!this.sim) return;
-    const { P, prev, flowAt } = this.sim;
-    const n = LINE_PTS;
-    for (let i = 3; i < n - 3; i++) {
-      const k = Math.sin(Math.PI * (i / (n - 1))) * (1 - Math.pow(i / (n - 1), 6));
-      const f = flowAt(P[i].x, P[i].z);
-      const sp = Math.hypot(f.vx, f.vz) || 1;
-      P[i].x -= (f.vx / sp) * 1.6 * k;
-      P[i].z -= (f.vz / sp) * 1.6 * k;
-      P[i].y += 0.25 * k;
-      prev[i].copy(P[i]);
-    }
-    this.mended = 0.6;
+    this.pendingMend = true;
+    this.mended = 0.9;
   }
 
   // Pointers into the sim for spook checks: where the line lies on the water.
@@ -345,11 +342,13 @@ export class Tackle {
       this.angle = targetAngle;
       whip = t < 0.45 ? 0.35 : t > 0.6 && t < 0.9 ? -0.6 : 0;
     } else if (this.mode === 'drift') {
-      targetAngle = this.mended > 0 ? 0.75 : 0.3;
+      // Rod tip low, pointing at the fly as it drifts, raised briefly to mend.
+      targetAngle = this.mended > 0.45 ? 0.6 : -0.12;
       targetBend = 0.04 + this.drag * 0.12;
     } else if (this.mode === 'fight') {
-      targetAngle = 0.62;
-      targetBend = clamp(0.15 + this.tension.value * 0.75, 0.15, 1.35);
+      // Bowing drops the rod tip towards the fish.
+      targetAngle = this.bowing ? 0.05 : 0.62;
+      targetBend = clamp(0.15 + this.tension.value * 0.75, 0.15, 1.35) * (this.bowing ? 0.4 : 1);
     }
     if (this.mended > 0) this.mended -= dt;
     if (this.mode !== 'cast') {
@@ -360,7 +359,8 @@ export class Tackle {
     this.bend = lerp(this.bend, targetBend, Math.min(1, dt * (this.mode === 'fight' ? 10 : 5)));
 
     const side = new THREE.Vector3().crossVectors(this.aimDir, UP).normalize();
-    this.sideTilt = lerp(this.sideTilt || 0.06, this.mode === 'fight' ? 0.45 : 0.06, Math.min(1, dt * 3));
+    const tilt = this.mode === 'fight' ? 0.4 - (this.rodSide || 0) * 0.75 : 0.06;
+    this.sideTilt = lerp(this.sideTilt || 0.06, tilt, Math.min(1, dt * 4));
     const dir = this.aimDir.clone().multiplyScalar(Math.cos(this.angle)).addScaledVector(UP, Math.sin(this.angle)).addScaledVector(side, this.sideTilt).normalize();
 
     if (this.mode === 'fight' && this.fishPos) pullTo.copy(this.fishPos);
@@ -426,6 +426,20 @@ export class Tackle {
     let dragSum = 0;
     for (let s = 0; s < steps; s++) {
       P[0].copy(this.tip);
+      if (this.pendingMend && s === 0) {
+        this.pendingMend = false;
+        for (let i = 2; i < n; i++) {
+          const u = i / (n - 1);
+          // Strongest in the middle of the line, nothing near the fly.
+          const k = u < 0.82 ? Math.sin(Math.PI * Math.min(1, u / 0.82)) : 0;
+          if (k <= 0) continue;
+          const f = flowAt(P[i].x, P[i].z);
+          const sp = Math.hypot(f.vx, f.vz) || 1;
+          const vx = (-f.vx / sp) * 1.8 * k, vz = (-f.vz / sp) * 1.8 * k, vy = 2.3 * k;
+          prev[i].set(P[i].x - vx * h, Math.max(WATER_Y, P[i].y) - vy * h, P[i].z - vz * h);
+          if (P[i].y < WATER_Y + 0.002) P[i].y = WATER_Y + 0.003;
+        }
+      }
       for (let i = 1; i < n; i++) {
         const p = P[i], q = prev[i];
         let vx = (p.x - q.x) * 0.985, vy = (p.y - q.y) * 0.985, vz = (p.z - q.z) * 0.985;
@@ -455,13 +469,27 @@ export class Tackle {
           const diff = (d - seg) / d;
           // The tip is fixed; the fly is light and gets towed.
           const wa = i === 0 ? 0 : 0.5;
-          const wb = i === 0 ? 1 : i + 1 === n - 1 ? 0.75 : 0.5;
+          // While mending, the fly is held still: the line moves, not the fly.
+          const flyW = this.mended > 0 ? 0.08 : 0.75;
+          const wb = i === 0 ? 1 : i + 1 === n - 1 ? flyW : 0.5;
           a.x += dx * diff * wa; a.y += dy * diff * wa; a.z += dz * diff * wa;
           b.x -= dx * diff * wb; b.y -= dy * diff * wb; b.z -= dz * diff * wb;
           if (a.y < WATER_Y) a.y = WATER_Y;
           if (b.y < WATER_Y) b.y = WATER_Y;
         }
       }
+      // A little stiffness so slack line lies in curves instead of sharp kinks.
+      const minGap = seg * 1.55;
+      for (let i = 1; i < n - 3; i++) {
+        const a = P[i], c = P[i + 2];
+        const dx = c.x - a.x, dz = c.z - a.z, dy = c.y - a.y;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d >= minGap || d === 0) continue;
+        const push = ((minGap - d) / d) * 0.25;
+        a.x -= dx * push; a.z -= dz * push;
+        c.x += dx * push; c.z += dz * push;
+      }
+      if (this.mended > 0) fly.copy(before).lerp(fly, 0.15);
       dragSum += Math.hypot(fly.x - before.x, fly.z - before.z) / h;
     }
     // How fast the line is pulling the fly against the current (m/s), 0..1.
@@ -538,7 +566,14 @@ export class Tackle {
       for (let i = 0; i < LINE_PTS; i++) set(i, tip);
       flyVisible = false;
     }
-    this.lineGeo.setPositions(L);
+    // Draw a smooth curve through the line's points.
+    for (let i = 0; i < LINE_PTS; i++) this.curvePts[i].set(L[i * 3], L[i * 3 + 1], L[i * 3 + 2]);
+    const R = this.renderPts;
+    for (let i = 0; i < RENDER_PTS; i++) {
+      this.curve.getPoint(i / (RENDER_PTS - 1), tmp);
+      R[i * 3] = tmp.x; R[i * 3 + 1] = Math.max(tmp.y, WATER_Y * 0.8); R[i * 3 + 2] = tmp.z;
+    }
+    this.lineGeo.setPositions(R);
 
     // Flies.
     const sf = this.surfaceFly;

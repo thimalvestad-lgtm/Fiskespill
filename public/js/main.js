@@ -69,6 +69,9 @@ let yaw = 0, pitch = -0.18;
 let zoom = 1, zoomTarget = 1, baseFov = 62;
 let walk = null, drift = null, strike = null, fight = null;
 let holding = false;
+let fightDrag = null;
+let bowing = false;
+let steerKeys = 0;
 let dragging = false;
 const recentRises = [];
 const tension = { value: 0 };
@@ -107,8 +110,7 @@ async function boot() {
   audio.enabled = save.sound !== false;
   minimap = new Minimap($('minimap'), river, (st) => walkTo(st));
   updateSoundButton();
-  world.setPolarized(save.polarized !== false);
-  $('btn-polar').classList.toggle('off', save.polarized === false);
+  applyPolar();
   resize();
 
   buildRigUI();
@@ -788,7 +790,13 @@ function startFight(d, f) {
     slackT: 0,
     clickT: 0,
     jump: null,
+    warn: null,
     jumpStress: 0,
+    crankQ: 0,
+    crankT: 0,
+    autoCrankT: 0,
+    rodSide: 0,
+    dragSide: 0,
     t: 0,
     // Many trout leap the moment they feel the hook.
     jumpAt: Math.random() < (f.species === 'rainbow' ? 0.85 : f.length > 45 ? 0.35 : 0.5) ? rand(0.35, 0.9) : null,
@@ -824,12 +832,34 @@ function startRun() {
     if (f.spot.type === 'bank') best = { x: f.spot.w.x + 1.2, z: f.spot.w.z };
     if (best) {
       fight.dir.set(best.x - f.pos.x, 0, best.z - f.pos.z).normalize();
+      fight.coverDir = fight.dir.clone();
       fight.toCover = true;
     }
   }
   fight.speed = 1.4 + f.kg * 0.9;
   $('fight-title').textContent = fight.toCover ? 'It’s heading for cover!' : 'It’s running!';
   fight.jumpSoon = Math.random() < (f.species === 'rainbow' ? 0.65 : 0.3);
+}
+
+function applyPolar() {
+  const on = save.polarized === true;
+  world.setPolarized(on);
+  $('btn-polar').classList.toggle('off', !on);
+  $('btn-polar').classList.toggle('lit', on);
+  $('polar-tint').classList.toggle('on', on);
+}
+
+function setBow(on) {
+  if (bowing === on) return;
+  bowing = on;
+  $('bow').classList.toggle('on', on);
+}
+
+function crank(amount = 0.45) {
+  if (!fight) return;
+  fight.crankQ = Math.min(1.4, fight.crankQ + amount);
+  fight.crankT = 0.35;
+  tackle.spool += 0.9;
 }
 
 function dragKg() {
@@ -884,11 +914,54 @@ function updateFight(dt) {
   }
 
   const pull = f.kg * 0.9 * (F.running ? 1.9 : 1) * (0.4 + 0.6 * F.stamina);
-  if (holding && pull <= drag) F.lineOut -= dt * 1.3 * (F.running ? 0.3 : 1);
+  // Cranking: every tap of Reel winds in a turn of line; holding it winds slowly.
+  if (holding) {
+    F.autoCrankT -= dt;
+    if (F.autoCrankT <= 0) { crank(0.22); F.autoCrankT = 0.3; }
+  }
+  F.crankT -= dt;
+  const cranking = F.crankT > 0;
+  let wound = 0;
+  if (F.crankQ > 0) {
+    if (pull <= drag && !bowing) {
+      wound = Math.min(F.crankQ, dt * 2.4);
+      F.lineOut -= wound;
+      F.crankQ -= wound;
+    } else {
+      // The fish is pulling harder than the drag: the spool just slips.
+      F.crankQ = Math.max(0, F.crankQ - dt * 3);
+    }
+  }
   F.lineOut = Math.max(1.5, F.lineOut);
+
+  // Side pressure: leaning the rod to one side pulls the fish's head that way.
+  const steerTarget = clamp(F.dragSide + steerKeys, -1, 1);
+  F.rodSide = lerp(F.rodSide, steerTarget, Math.min(1, dt * 5));
+  tackle.rodSide = F.rodSide;
+  tackle.bowing = bowing;
+  const dist0 = Math.hypot(f.pos.x - F.foot.x, f.pos.z - F.foot.z);
+  if (Math.abs(F.rodSide) > 0.1 && !bowing && dist0 >= F.lineOut - 0.2) {
+    const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const toMe = new THREE.Vector3(F.foot.x - f.pos.x, 0, F.foot.z - f.pos.z).normalize();
+    const want = toMe.multiplyScalar(0.5).addScaledVector(right, F.rodSide * 1.4).normalize();
+    const k = Math.min(1, dt * 1.6 * Math.abs(F.rodSide) * clamp(F.tensionKg / 0.8, 0.3, 1.5));
+    F.dir.lerp(want, k).normalize();
+    if (F.toCover && F.coverDir && F.dir.dot(F.coverDir) < 0.2) {
+      F.toCover = false;
+      $('fight-title').textContent = 'You turned its head away from cover!';
+    }
+  }
+
+  const effLine = F.lineOut + (bowing ? 1.4 : 0); // bowing drops the rod and gives slack
   const dist = Math.hypot(f.pos.x - F.foot.x, f.pos.z - F.foot.z);
   let given = 0, t;
-  if (dist > F.lineOut) {
+  if (dist > effLine && bowing) {
+    // Bowing: line slides out without much resistance.
+    given = dist - effLine;
+    F.lineOut = dist - 1.4;
+    t = 0.06;
+    F.slackT = 0;
+  } else if (dist > F.lineOut) {
     if (pull > drag) {
       given = dist - F.lineOut;
       F.lineOut = dist;
@@ -900,11 +973,12 @@ function updateFight(dt) {
       f.pos.z = F.foot.z + (f.pos.z - F.foot.z) * k;
       t = pull;
     }
-    if (holding) t += 0.3;
+    if (cranking) t += 0.3;
     F.slackT = 0;
   } else {
-    const slack = F.lineOut - dist;
-    t = slack > 0.6 ? 0.05 : pull * 0.6 + (holding ? 0.3 : 0);
+    const slack = effLine - dist;
+    t = slack > 0.6 ? 0.05 : pull * 0.6 + (cranking ? 0.3 : 0);
+    if (bowing) t = Math.min(t, 0.08);
     if (slack > 2.5) F.slackT += dt;
     else F.slackT = 0;
   }
@@ -912,7 +986,7 @@ function updateFight(dt) {
   const ratio = F.tensionKg / F.strength;
   tension.value = F.tensionKg / 2.2;
 
-  F.stamina = Math.max(0, F.stamina - dt * (0.03 + F.tensionKg * 0.05 + (F.running ? 0.03 : 0)) / (0.5 + f.kg * 0.5));
+  F.stamina = Math.max(0, F.stamina - dt * (0.03 + F.tensionKg * 0.05 + (F.running ? 0.03 : 0) + Math.abs(F.rodSide) * 0.02) / (0.5 + f.kg * 0.5));
   if (ratio > 0.92) F.over += dt;
   else F.over = Math.max(0, F.over - dt * 1.5);
   if (F.running && F.toCover && given > 0 && f.spot.snag > 0.3) F.snag += given * f.spot.snag * 0.14;
@@ -925,7 +999,7 @@ function updateFight(dt) {
       audio.click(1200 + save.drag * 160, 0.035);
       F.clickT = clamp(0.006 / (given / dt + 0.01), 0.025, 0.12);
       tackle.spool -= 0.6;
-    } else if (holding && pull <= drag) {
+    } else if (wound > 0) {
       audio.click(1700, 0.025);
       F.clickT = 0.08;
       tackle.spool += 0.5;
@@ -934,12 +1008,39 @@ function updateFight(dt) {
 
   // Depth, heading, jumps and splashes.
   let y = F.running ? -0.35 : F.stamina < 0.3 ? -0.12 : -0.5;
-  const jumpNow = (F.jumpAt !== null && F.t >= F.jumpAt) || (F.jumpSoon && F.running && Math.random() < dt * 1.5);
-  if (jumpNow && !F.jump) {
+  // A jump is coming: the fish surges up, bulging and swirling the surface.
+  const wantJump = (F.jumpAt !== null && F.t >= F.jumpAt) || (F.jumpSoon && F.running && Math.random() < dt * 1.5);
+  if (wantJump && !F.jump && !F.warn) {
     F.jumpAt = null;
-    $('fight-title').textContent = 'It\u2019s jumping! Ease off!';
+    F.jumpSoon = false;
+    F.warn = { t: 0, dur: rand(0.9, 1.3), boilT: 0 };
+    $('fight-title').textContent = 'It\u2019s coming up! Get ready to bow!';
+    $('fight').classList.add('warning');
+    $('jump-cue').hidden = false;
+    audio.surge();
+  }
+  if (F.warn) {
+    F.warn.t += dt;
+    y = lerp(y, -0.06, Math.min(1, F.warn.t / F.warn.dur));
+    F.warn.boilT -= dt;
+    if (F.warn.boilT <= 0) {
+      fx.ring(f.pos.x, f.pos.z, 0.5 + F.warn.t * 0.6, 0.9);
+      fx.splash(f.pos.x, 0, f.pos.z, 3, 0.25);
+      F.warn.boilT = 0.18;
+    }
+    const sc = screenOf(new THREE.Vector3(f.pos.x, 0.3, f.pos.z));
+    const r = $('stage').getBoundingClientRect();
+    $('jump-cue').style.left = `${sc.x - r.left}px`;
+    $('jump-cue').style.top = `${sc.y - r.top}px`;
+  }
+  const jumpNow = F.warn && F.warn.t >= F.warn.dur;
+  if (jumpNow && !F.jump) {
+    F.warn = null;
+    $('fight').classList.remove('warning');
+    $('jump-cue').hidden = true;
+    $('fight-title').textContent = 'It\u2019s jumping! Bow!';
     $('fight').classList.add('jumping');
-    F.jump = { t: 0, dur: 0.75, h: 0.45 + f.kg * 0.12 };
+    F.jump = { t: 0, dur: 0.85, h: 0.45 + f.kg * 0.12 };
     F.jumpSoon = false;
     fx.splash(f.pos.x, 0, f.pos.z, 30, 1.1);
     audio.splash(0.7);
@@ -952,7 +1053,7 @@ function updateFight(dt) {
     f.roll = Math.sin(k * 12) * 0.6;
     // Bow to the fish: a tight line while it's in the air rips the hook out.
     const pressure = F.tensionKg / F.strength;
-    if (F.jump.t > 0.12 && (holding || pressure > 0.5)) F.jumpStress += dt * (holding ? 1.4 : 1) * (0.6 + pressure);
+    if (F.jump.t > 0.1 && !bowing && (cranking || pressure > 0.3)) F.jumpStress += dt * (cranking ? 1.6 : 1) * (0.6 + pressure);
     if (F.jumpStress > 0.32) return endFight('thrown');
     if (k >= 1) {
       F.jump = null;
@@ -967,7 +1068,7 @@ function updateFight(dt) {
   } else {
     f.pitch = lerp(f.pitch || 0, 0, dt * 4);
   }
-  f.pos.y = F.jump ? y : lerp(f.pos.y, y, dt * 2);
+  f.pos.y = F.jump ? y : lerp(f.pos.y, y, dt * (F.warn ? 4 : 2));
   f.running = F.running;
   f.faceTowards(f.pos.x + F.dir.x, f.pos.z + F.dir.z, 0.15);
   if (!F.jump && f.pos.y > -0.25 && Math.random() < dt * (F.running ? 3 : 0.8)) {
@@ -981,6 +1082,7 @@ function updateFight(dt) {
 
   $('tension').style.width = `${clamp(ratio, 0, 1.1) / 1.1 * 100}%`;
   $('lineout').textContent = `${Math.round(F.lineOut)} m`;
+  $('side-dot').style.left = `${50 + F.rodSide * 45}%`;
   $('tension-bar').classList.toggle('danger', ratio > 0.8);
 
   if (F.over > 0.3) return endFight('snap');
@@ -995,7 +1097,11 @@ function endFight(outcome) {
   fight = null;
   holding = false;
   $('fight').hidden = true;
-  $('fight').classList.remove('jumping');
+  $('fight').classList.remove('jumping', 'warning');
+  $('jump-cue').hidden = true;
+  bowing = false;
+  tackle.rodSide = 0;
+  tackle.bowing = false;
   $('bottombar').hidden = false;
   $('reel').classList.remove('on');
   tension.value = 0;
@@ -1017,7 +1123,7 @@ function endFight(outcome) {
     snap: `Snap! The ${tippetInfo().id} tippet couldn’t take the strain, and ${size} is gone. Loosen the drag, or stop reeling when it runs.`,
     snag: 'The fish dived under a rock and the line went solid. Gone. In snaggy water, set the drag tighter (with a tippet strong enough to take it) so the fish can’t reach cover.',
     slack: 'The line went slack and the hook fell out. Keep reeling when the fish swims towards you.',
-    thrown: 'The trout leapt, shook its head against the tight line, and threw the hook. When a fish jumps, let go of the reel and ease the drag, so the line goes soft while it\u2019s in the air.',
+    thrown: 'The trout leapt and shook its head against the tight line, and the hook flew out. When you see it coming up, hold Bow (B) to drop the rod tip, so the line goes soft while it\u2019s in the air.',
   }[outcome];
   log(msg);
   toast(msg, 6500);
@@ -1184,7 +1290,7 @@ function updateFishLife(dt) {
     time: world.time, minute: state.minute,
     sun: state.day.weather.id === 'sunny' ? clamp(light - 0.3, 0, 1) : 0.1,
   };
-  const visCtx = { clarity: state.day.clarity.id, polarized: save.polarized !== false, light: clamp(light * (state.day.weather.id === 'sunny' ? 1 : 0.8), 0.15, 1) };
+  const visCtx = { clarity: state.day.clarity.id, polarized: save.polarized === true, light: clamp(light * (state.day.weather.id === 'sunny' ? 1 : 0.8), 0.15, 1) };
   for (const f of fishes) {
     visCtx.distance = Math.hypot(f.pos.x - cam.x, f.pos.z - cam.z);
     f.vis = f.computeVisibility(visCtx);
@@ -1222,21 +1328,26 @@ function bindEvents() {
   canvas.addEventListener('pointerdown', (e) => {
     audio.start();
     if (state.phase === 'fight') {
-      holding = true;
-      $('reel').classList.add('on');
+      // In a fight, dragging sideways leans the rod for side pressure.
+      fightDrag = { x: e.clientX };
+      try { canvas.setPointerCapture(e.pointerId); } catch {}
       return;
     }
     down = { x: e.clientX, y: e.clientY, yaw, pitch, drag: false };
     try { canvas.setPointerCapture(e.pointerId); } catch {}
   });
   canvas.addEventListener('pointermove', (e) => {
+    if (fightDrag && fight) {
+      fight.dragSide = clamp((e.clientX - fightDrag.x) / 140, -1, 1);
+      return;
+    }
     if (down) {
       const dx = e.clientX - down.x, dy = e.clientY - down.y;
       if (!down.drag && Math.hypot(dx, dy) > 7) down.drag = true;
       if (down.drag) {
         dragging = true;
-        yaw = down.yaw + (dx * 0.0045) / zoom;
-        pitch = clamp(down.pitch + (dy * 0.003) / zoom, -0.85, 0.3);
+        yaw = down.yaw - (dx * 0.0045) / zoom;
+        pitch = clamp(down.pitch - (dy * 0.003) / zoom, -0.85, 0.3);
       }
       return;
     }
@@ -1253,6 +1364,11 @@ function bindEvents() {
   const up = (e) => {
     holding = false;
     $('reel').classList.remove('on');
+    if (fightDrag) {
+      fightDrag = null;
+      if (fight) fight.dragSide = 0;
+      return;
+    }
     if (!down) return;
     const wasDrag = down.drag;
     down = null;
@@ -1277,18 +1393,26 @@ function bindEvents() {
     if (e.code === 'Space') {
       e.preventDefault();
       if (e.repeat) return;
-      if (state.phase === 'fight') { holding = true; $('reel').classList.add('on'); }
+      if (state.phase === 'fight') { crank(); holding = true; if (fight) fight.autoCrankT = 0.35; $('reel').classList.add('on'); }
       else if (state.phase === 'strike') doStrike();
       else if (state.phase === 'idle' || state.phase === 'drift') cast();
     }
     if (state.phase === 'fight' && (e.code === 'ArrowUp' || e.code === 'KeyW')) { setDrag(1); e.preventDefault(); }
     if (state.phase === 'fight' && (e.code === 'ArrowDown' || e.code === 'KeyS')) { setDrag(-1); e.preventDefault(); }
     if (e.code === 'KeyM') mend();
-    if (e.code === 'ArrowLeft' || e.code === 'KeyA') yaw += 0.06;
-    if (e.code === 'ArrowRight' || e.code === 'KeyD') yaw -= 0.06;
+    if (state.phase === 'fight') {
+      if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { setBow(true); e.preventDefault(); }
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') steerKeys = -1;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') steerKeys = 1;
+    } else {
+      if (e.code === 'ArrowLeft' || e.code === 'KeyA') yaw += 0.06;
+      if (e.code === 'ArrowRight' || e.code === 'KeyD') yaw -= 0.06;
+    }
   });
   window.addEventListener('keyup', (e) => {
     if (e.code === 'Space') { holding = false; $('reel').classList.remove('on'); }
+    if (e.code === 'KeyB' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') setBow(false);
+    if (['ArrowLeft', 'KeyA', 'ArrowRight', 'KeyD'].includes(e.code)) steerKeys = 0;
   });
 
   $('strike').addEventListener('pointerdown', (e) => { e.stopPropagation(); doStrike(); });
@@ -1304,7 +1428,11 @@ function bindEvents() {
   $('btn-leader').addEventListener('click', () => togglePanel('leaderbox'));
   document.querySelectorAll('[data-hide]').forEach((b) => b.addEventListener('click', () => ($(b.dataset.hide).hidden = true)));
   const reel = $('reel');
-  reel.addEventListener('pointerdown', (e) => { e.preventDefault(); holding = true; reel.classList.add('on'); });
+  reel.addEventListener('pointerdown', (e) => { e.preventDefault(); crank(); holding = true; if (fight) fight.autoCrankT = 0.35; reel.classList.add('on'); });
+  const bow = $('bow');
+  bow.addEventListener('pointerdown', (e) => { e.preventDefault(); setBow(true); });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) bow.addEventListener(ev, () => setBow(false));
+  bow.addEventListener('contextmenu', (e) => e.preventDefault());
   reel.addEventListener('pointerup', () => { holding = false; reel.classList.remove('on'); });
   reel.addEventListener('pointerleave', () => { holding = false; reel.classList.remove('on'); });
   reel.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -1314,7 +1442,7 @@ function bindEvents() {
     $('intro').hidden = true;
     state.phase = 'idle';
     audio.start();
-    toast('Drag to look around. Tap the water where you want the fly to land, then Cast. Tap fish or rises you spot for points.', 7500);
+    toast('Drag to look around. Tap the water where you want the fly to land, then Cast. Put on the polarized glasses (🕶) to see into the water, and tap fish or rises you spot for points.', 8000);
     log(`Day ${save.days}: ${state.day.weather.label.toLowerCase()}, ${state.day.clarity.label.toLowerCase()} water.`);
     updateHUD();
   });
@@ -1333,10 +1461,9 @@ function bindEvents() {
     updateSoundButton();
   });
   $('btn-polar').addEventListener('click', () => {
-    save.polarized = save.polarized === false;
+    save.polarized = !save.polarized;
     persist();
-    world.setPolarized(save.polarized);
-    $('btn-polar').classList.toggle('off', !save.polarized);
+    applyPolar();
     toast(save.polarized ? 'Polarized glasses on: the glare is gone and you can see into the water.' : 'Glasses off. The surface glare hides the fish.', 3500);
   });
   $('notes-toggle').addEventListener('click', () => $('notes-card').classList.toggle('collapsed'));

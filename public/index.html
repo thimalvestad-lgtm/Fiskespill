@@ -48,6 +48,8 @@
     <div class="aim-label" id="aim-label"></div>
     <div class="toast" id="toast" aria-live="polite"></div>
     <div class="floaters" id="floaters"></div>
+    <div class="jump-cue" id="jump-cue" hidden>⚠ JUMP!</div>
+    <div class="polar-tint" id="polar-tint"></div>
     <ol class="log" id="log"></ol>
 
     <button class="strike" id="strike" hidden>Strike!</button>
@@ -65,8 +67,12 @@
         </div>
         <button class="drag-btn" id="drag-up" title="Tighten drag (W / ↑)" aria-label="Tighten drag">+</button>
       </div>
-      <button class="reel" id="reel">Hold to reel</button>
-      <div class="fight-hint">Hold <b>Reel</b> (or <kbd>Space</kbd>) to bring the fish in. If the fish pulls harder than the drag, line slips out instead. Too tight and the tippet snaps; too loose and the fish reaches the rocks.</div>
+      <div class="meter"><span>Rod side</span><div class="side-meter"><span>◀</span><div class="side-track"><div class="side-dot" id="side-dot"></div></div><span>▶</span></div></div>
+      <div class="fight-btns">
+        <button class="bow" id="bow">Bow<small>hold · B</small></button>
+        <button class="reel" id="reel">Reel<small>tap · Space</small></button>
+      </div>
+      <div class="fight-hint">Tap <b>Reel</b> to crank line in; it only gains when the fish pulls less than the drag. Watch the water: when the fish surges up, hold <b>Bow</b> to drop the rod through the jump. Drag left/right on the river (or A/D) for side pressure, to steer it away from rocks.</div>
     </div>
 
     <div class="bottombar" id="bottombar">

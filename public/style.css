@@ -57,6 +57,7 @@ h1, h2, h3, .brand { font-family: 'Fraunces', Georgia, serif; font-weight: 600; 
 }
 .icon-btn:hover { background: rgba(255, 255, 255, 0.14); }
 .icon-btn.off { opacity: 0.5; }
+.icon-btn.lit { background: #c98b46; border-color: #e8b25c; opacity: 1; }
 
 /* The 3D stage and its overlays */
 .stage { position: relative; flex: 1; min-height: 0; overflow: hidden; background: #6d8a6a; user-select: none; -webkit-user-select: none; }
@@ -267,12 +268,37 @@ h1, h2, h3, .brand { font-family: 'Fraunces', Georgia, serif; font-weight: 600; 
 .break { position: absolute; top: -4px; bottom: -4px; width: 3px; background: #e06a4a; border-radius: 2px; }
 .drag-meta { display: flex; justify-content: space-between; font-size: 11.5px; margin-top: 4px; gap: 6px; }
 .drag-meta span { opacity: 0.75; }
-.reel {
-  width: 100%; padding: 14px; border-radius: 14px; border: 0;
-  background: #e8b25c; color: #2a2010; font-weight: 700; font-size: 17px;
-  touch-action: none;
+.fight-btns { display: grid; grid-template-columns: 1fr 1.6fr; gap: 8px; margin-top: 8px; }
+.reel, .bow {
+  padding: 12px 8px; border-radius: 14px; border: 0; font-weight: 700; font-size: 17px;
+  touch-action: none; display: flex; flex-direction: column; align-items: center; line-height: 1.1;
 }
-.reel.on { background: #f3cd85; transform: scale(0.98); box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25); }
+.reel small, .bow small { font-size: 10.5px; font-weight: 600; opacity: 0.7; margin-top: 2px; }
+.reel { background: #e8b25c; color: #2a2010; }
+.reel.on { background: #f3cd85; transform: scale(0.97); box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25); }
+.bow { background: #9ec9d6; color: #14303a; }
+.bow.on { background: #c7e4ec; transform: scale(0.97); box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.25); }
+.fight.warning .bow { animation: bowpulse 0.4s infinite alternate; }
+@keyframes bowpulse { to { box-shadow: 0 0 0 4px #ffd27a; } }
+.fight.warning { box-shadow: 0 0 0 3px #e06a4a, 0 8px 30px rgba(0, 0, 0, 0.4); }
+.side-meter { display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: 0.85; }
+.side-track { position: relative; flex: 1; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.14); }
+.side-dot { position: absolute; top: -3px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #ffd27a; left: 50%; transition: left 0.08s; }
+.jump-cue {
+  position: absolute; transform: translate(-50%, -150%); z-index: 4; pointer-events: none;
+  font-family: 'Fraunces', serif; font-weight: 600; font-size: 22px; color: #fff;
+  background: #e06a4a; padding: 4px 12px; border-radius: 999px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35); animation: cue 0.35s infinite alternate;
+}
+.jump-cue[hidden] { display: none; }
+@keyframes cue { to { transform: translate(-50%, -170%) scale(1.12); } }
+.polar-tint {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0; transition: opacity 0.6s;
+  background:
+    radial-gradient(ellipse 75% 70% at center, rgba(0, 0, 0, 0) 60%, rgba(35, 22, 8, 0.5) 100%),
+    rgba(170, 110, 40, 0.14);
+}
+.polar-tint.on { opacity: 1; }
 .fight-hint { font-size: 11.5px; opacity: 0.72; margin-top: 8px; }
 kbd { background: rgba(255, 255, 255, 0.15); border-radius: 4px; padding: 0 4px; font-size: 11px; }
 

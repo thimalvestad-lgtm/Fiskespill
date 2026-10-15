@@ -360,7 +360,7 @@ export class World {
           vec2 gw = g;
           vec3 N = normalize(vec3(-gw.x * amp, 1.0, -gw.y * amp));
           vec3 V = normalize(cameraPosition - vWorld);
-          float fres = (0.03 + 0.97 * pow(1.0 - max(dot(N, V), 0.0), 5.0)) * (1.0 - 0.6 * uPolar);
+          float fres = (0.03 + 0.97 * pow(1.0 - max(dot(N, V), 0.0), 5.0)) * (1.0 - 0.88 * uPolar) * (1.0 + 0.35 * (1.0 - uPolar));
           vec3 R = reflect(-V, N);
           vec3 refl = mix(uHorizon, uSky, pow(clamp(R.y, 0.0, 1.0), 0.6));
           float depth = clamp(vDepth, 0.0, 3.0);
@@ -380,7 +380,7 @@ export class World {
           vec2 a1 = p - dir * q1 * vSpeed * 5.0 + vec2(7.3, 2.1);
           float fp = mix(n(a0 * vec2(3.2, 0.8)) * n(a0 * vec2(7.0, 1.8) + 4.0), n(a1 * vec2(3.2, 0.8)) * n(a1 * vec2(7.0, 1.8) + 4.0), qw);
           float foam = smoothstep(0.55 - vFoam * 0.4, 0.95, fp * 1.6) * smoothstep(0.02, 0.25, vFoam);
-          vec3 col = mix(body, refl, fres) + uSunColor * spec;
+          vec3 col = mix(body, refl, fres) + uSunColor * spec * (1.0 - 0.75 * uPolar);
           // White streaks running with the current: the faster, the more.
           float sl = mix(n(a0 * vec2(5.0, 0.35)) * n(a0 * vec2(11.0, 0.8) + 3.0), n(a1 * vec2(5.0, 0.35)) * n(a1 * vec2(11.0, 0.8) + 3.0), qw);
           float streak = smoothstep(0.3, 0.48, sl) * smoothstep(0.25, 1.0, vSpeed) * 0.7;
@@ -390,7 +390,7 @@ export class World {
           float white = clamp(foam * 0.85 + streak + fleck, 0.0, 1.0);
           col = mix(col, vec3(0.95, 0.98, 1.0) * (0.6 + 0.4 * uLight), white);
           foam = max(foam, white);
-          float alpha = mix(0.3, 0.88 - 0.22 * uPolar, smoothstep(0.0, 1.9, depth));
+          float alpha = mix(0.3 - 0.12 * uPolar, 0.9 - 0.42 * uPolar, smoothstep(0.0, 1.9, depth));
           alpha = mix(alpha, 0.9, (1.0 - uClarity) * 0.8);
           alpha = max(alpha, max(fres * 0.95, foam));
           // Fade into the shore.

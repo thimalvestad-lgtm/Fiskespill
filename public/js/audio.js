@@ -256,6 +256,14 @@ export class Ambience {
     }
   }
 
+  // A fish surging up from below before it jumps: a rising, swelling swirl.
+  surge() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.burst(0.9, 'bandpass', 0.07, [300, 1400]);
+    this.tone(t, 110, 240, 0.8, 0.05, 0, 'sine');
+  }
+
   // A trout sipping something off the surface.
   sip(vol = 1, pan = 0) {
     if (!this.ctx) return;
